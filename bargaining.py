@@ -63,7 +63,7 @@ def process_bargain_records(bargain_df: pd.DataFrame, df_quote: pd.DataFrame) ->
         # 欄位順序
         final_columns = [
             '單據編號', '成交日期', 'T+?交割', '買/賣','客戶ID', 'CB代號', '議價張數', '議價價格', '參考價', '錄音時間', '交割日期',
-            '客戶名稱', 'CB名稱', '議價金額', '備註', '銀行', '分行', '銀行帳號', '集保帳號', '通訊地址'
+            '客戶名稱', 'CB名稱', '議價金額', '集保帳號', '銀行', '分行', '銀行帳號', '通訊地址', '備註'
         ]
         for col in final_columns:
             if col not in df_bargain_con.columns:

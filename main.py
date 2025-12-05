@@ -242,6 +242,14 @@ class TableEditor(QWidget):
         self.btn_buy_qty_check.setFixedSize(120, 30)
         self.btn_buy_qty_check.clicked.connect(self.check_buy_table_with_qty)
         
+        self.btn_buy_check_declare = QPushButton("檢查申報")
+        self.btn_buy_check_declare.setFixedSize(100, 30)
+        self.btn_buy_check_declare.clicked.connect(self.check_buy_declare)
+        
+        self.btn_buy_add_asw = QPushButton("加入ASW")
+        self.btn_buy_add_asw.setFixedSize(100, 30)
+        self.btn_buy_add_asw.clicked.connect(self.add_asw_to_buy_table)
+        
         self.btn_buy_generate = QPushButton("產生上傳檔")
         self.btn_buy_generate.setFixedSize(100, 30)
         self.btn_buy_generate.clicked.connect(self.generate_buy_upload_file)
@@ -253,6 +261,8 @@ class TableEditor(QWidget):
         buy_btn_layout.addWidget(self.btn_buy_delete)
         buy_btn_layout.addWidget(self.btn_buy_quote_check)
         buy_btn_layout.addWidget(self.btn_buy_qty_check)
+        buy_btn_layout.addWidget(self.btn_buy_check_declare)
+        buy_btn_layout.addWidget(self.btn_buy_add_asw)
         buy_btn_layout.addWidget(self.btn_buy_generate)
         
         # 新增：重新編號按鈕
@@ -300,7 +310,7 @@ class TableEditor(QWidget):
         self.btn_sell_qty_check = QPushButton("張數/總額確認")
         self.btn_sell_qty_check.setFixedSize(120, 30)
         self.btn_sell_qty_check.clicked.connect(self.check_sell_table_with_qty)
-        
+
         # 新增：產已實CBAS契約 按鈕
         self.btn_sell_realized = QPushButton("產已實CBAS契約")
         self.btn_sell_realized.setFixedSize(120, 30)
@@ -369,7 +379,7 @@ class TableEditor(QWidget):
         
         # 錄音表格
         self.table_recording = TableWidgetWithDelete()
-        recording_columns = ['客戶ID', '客戶名稱', 'CB名稱', 'CB代號', '買進張數', '賣出張數', '成交均價', 'CELLPHONE', '授權人', '授權人電話', '錄音時間', '錄音人員']
+        recording_columns = ['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '買進張數', '賣出張數', '成交均價', 'CELLPHONE', '授權人', '授權人電話', '錄音時間', '錄音人員']
         self.table_recording.setColumnCount(len(recording_columns))
         self.table_recording.setHorizontalHeaderLabels(recording_columns)
         self.table_recording.setSortingEnabled(True)  # 啟用欄位排序
@@ -506,7 +516,7 @@ class TableEditor(QWidget):
         
         # 議價交易表格
         self.table_bargain = TableWidgetWithDelete()
-        bargain_columns = ['單據編號', '成交日期', 'T+?交割', '買/賣','客戶ID', 'CB代號', '議價張數', '議價價格','參考價', '錄音時間', '交割日期', '客戶名稱', 'CB名稱', '議價金額', '備註', '銀行', '分行', '銀行帳號', '集保帳號', '通訊地址']
+        bargain_columns = ['單據編號', '成交日期', 'T+?交割', '買/賣','客戶ID', 'CB代號', '議價張數', '議價價格','參考價', '錄音時間', '交割日期', '客戶名稱', 'CB名稱', '議價金額', '集保帳號', '銀行', '分行', '銀行帳號', '通訊地址', '備註']
         self.table_bargain.setColumnCount(len(bargain_columns))
         self.table_bargain.setHorizontalHeaderLabels(bargain_columns)
         
@@ -1452,8 +1462,8 @@ class TableEditor(QWidget):
                 return
             
             # 儲存檔案（不含標題行）
-            upload_file_path = os.path.join(today_dir, f"新作上傳檔_{today}.csv")
-            df_upload.to_csv(upload_file_path, index=False, encoding='utf-8-sig', header=False)
+            upload_file_path = os.path.join(today_dir, f"新作上傳檔.csv")
+            df_upload.to_csv(upload_file_path, index=False, encoding='cp950', header=False)
             df.to_excel(os.path.join(today_dir, f"新作上傳檔_{today}.xlsx"), index=False)
             
             QMessageBox.information(self, "產生成功", f"新作買進上傳檔已產生：\n{upload_file_path}")
@@ -1508,10 +1518,10 @@ class TableEditor(QWidget):
                 return
             
             # 上傳檔案路徑
-            upload_file_path = os.path.join(today_dir, f"解約上傳檔_{today}.csv")
+            upload_file_path = os.path.join(today_dir, f"解約上傳檔.csv")
             
             # 儲存檔案（不含標題行）
-            df_upload.to_csv(upload_file_path, index=False, encoding='utf-8-sig', header=False)
+            df_upload.to_csv(upload_file_path, index=False, encoding='cp950', header=False)
             df.to_excel(os.path.join(today_dir, f"解約上傳檔_{today}.xlsx"), index=False)
             
             QMessageBox.information(self, "產生成功", f"提解賣出上傳檔已產生：\n{upload_file_path}")
@@ -1769,7 +1779,7 @@ class TableEditor(QWidget):
             df_recording['錄音人員'] = '蔡睿'
             
             # 重新排列欄位順序
-            df_recording = df_recording[['客戶ID', '客戶名稱', 'CB名稱', 'CB代號', '買進張數', '賣出張數', '成交均價', 'CELLPHONE', '授權人', '授權人電話', '錄音時間', '錄音人員']]
+            df_recording = df_recording[['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '買進張數', '賣出張數', '成交均價', 'CELLPHONE', '授權人', '授權人電話', '錄音時間', '錄音人員']]
             
             # 更新表格顯示
             self.update_recording_table(df_recording)
@@ -2234,6 +2244,55 @@ class TableEditor(QWidget):
         
         QMessageBox.information(self, "張數/總額確認", "\n".join(lines))
 
+        #檢查有無重覆原單契約編號
+        # 找出所有重複的原單契約編號（包括第一次出現的）
+        duplicate_contracts = df_sell[df_sell.duplicated(subset=['原單契約編號'], keep=False)]['原單契約編號'].unique()
+        
+        if len(duplicate_contracts) > 0:
+            # 有重複：將重複的行變橙色
+            orange_color = QColor(255, 165, 0)  # 橙色
+            
+            # 找到原單契約編號列的索引
+            sell_columns = [self.table_sell.horizontalHeaderItem(i).text() for i in range(self.table_sell.columnCount())]
+            contract_col_idx = sell_columns.index('原單契約編號') if '原單契約編號' in sell_columns else -1
+            
+            if contract_col_idx != -1:
+                # 將重複的契約編號轉換為集合，提高查找效率
+                duplicate_contracts_set = set(str(c).strip() for c in duplicate_contracts)
+                
+                # 遍歷表格，找到重複的行並變色
+                # 注意：需要考慮表格可能啟用了排序，所以直接從表格讀取數據
+                for row in range(self.table_sell.rowCount()):
+                    item = self.table_sell.item(row, contract_col_idx)
+                    if item:
+                        contract_no = str(item.text()).strip()
+                        # 如果該行的原單契約編號在重複列表中，將整行變橙色
+                        if contract_no in duplicate_contracts_set:
+                            # 將整行變橙色
+                            for col in range(self.table_sell.columnCount()):
+                                cell_item = self.table_sell.item(row, col)
+                                if cell_item:
+                                    cell_item.setBackground(orange_color)
+                                else:
+                                    # 如果該格沒有item，創建一個並設置背景色
+                                    cell_item = QTableWidgetItem('')
+                                    cell_item.setBackground(orange_color)
+                                    self.table_sell.setItem(row, col, cell_item)
+            
+            # 顯示重複的契約編號列表
+            duplicate_list = ', '.join(duplicate_contracts[:10])  # 最多顯示10個
+            if len(duplicate_contracts) > 10:
+                duplicate_list += f' ... (共{len(duplicate_contracts)}個)'
+            
+            QMessageBox.warning(
+                self, 
+                "發現重複編號", 
+                f"發現 {len(duplicate_contracts)} 個重複的原單契約編號：\n{duplicate_list}\n\n已將重複的行標記為橙色。"
+            )
+        else:
+            # 無重複
+            QMessageBox.information(self, "檢查完成", "✓ 無重複原單契約編號")
+
         sum_buy_amt, sum_buy_qty, sum_sell_amt, sum_sell_qty = self.get_monitor_fill_sum_amt()
         sellmatch_amt = int(df_group[df_group['來自'] == '盤面交易']['成交金額'].sum())
         sellmatch_qty = int(df_group[df_group['來自'] == '盤面交易']['履約張數'].sum())
@@ -2281,6 +2340,92 @@ class TableEditor(QWidget):
         elif buymatch_amt == sum_buy_amt and buymatch_qty == sum_buy_qty:
             QMessageBox.information(self, "確認", "盤面交易金額或張數與CB自營系統相符")
 
+    def check_buy_declare(self):
+        """檢查新作買進申報"""
+        try:
+            df_buy = self.get_table_data(self.table_buy)
+            if df_buy.empty:
+                QMessageBox.warning(self, "警告", "新作買進分頁沒有資料！")
+                return
+            
+            # 嘗試多種編碼讀取CSV文件
+            tday_str = datetime.now().strftime('%Y%m%d')
+            tmonth_str = datetime.now().strftime('%Y%m')
+            csv_path = rf'\\10.72.228.112\cbas業務公用區\稽核\{tmonth_str}月內稽\CBOQTA{tday_str}.csv'
+            df_report = None
+            for encoding in ['utf-8-sig', 'utf-8', 'big5', 'cp950', 'gbk']:
+                try:
+                    df_report = pd.read_csv(csv_path, encoding=encoding)
+                    break
+                except (UnicodeDecodeError, UnicodeError):
+                    continue
+            
+            if df_report is None:
+                QMessageBox.critical(self, "錯誤", "無法讀取申報文件，請檢查文件編碼")
+                return
+            
+            # 修正groupby語法：使用列表作為參數
+            df_report_group = df_report.groupby(['CB代號', '身分字號/法人統編']).agg({'今日預定承作名目本金(元)': 'sum'}).reset_index()
+            df_report_group['今日預定承作名目本金(元)'] = df_report_group['今日預定承作名目本金(元)'].astype(int) / 100000
+            df_report_group['CB代號'] = df_report_group['CB代號'].astype(str)
+            df_report_group['身分字號/法人統編'] = df_report_group['身分字號/法人統編'].astype(str)
+            df_buy['成交張數'] = df_buy['成交張數'].astype(int)
+            df_buy_group = df_buy.groupby(['CB代號', '客戶ID']).agg({'成交張數': 'sum'}).reset_index()
+            df_buy_group['CB代號'] = df_buy_group['CB代號'].astype(str)
+            df_buy_group['客戶ID'] = df_buy_group['客戶ID'].astype(str)
+            # 轉換成交張數為數值型
+            df_buy_group['成交張數'] = pd.to_numeric(df_buy_group['成交張數'], errors='coerce').fillna(0)
+            print(df_buy_group)
+            # 合併兩個DataFrame進行比對
+            # 將 df_report_group 的 '身分字號/法人統編' 與 df_buy_group 的 '客戶ID' 對應
+            # 使用 'left' merge：只檢查 df_buy 中存在的記錄
+            # 注意：df_report 中有但 df_buy 中沒有的記錄不會出現在比對中（這是正常的，申報了但沒實際交易）
+            df_compare = df_buy_group.merge(
+                df_report_group,
+                left_on=['CB代號', '客戶ID'],
+                right_on=['CB代號', '身分字號/法人統編'],
+                how='left',  # 只保留 df_buy_group 的記錄，df_report 中有但 df_buy 中沒有的不會報錯
+                suffixes=('_buy', '_report')
+            )
+            
+            # 計算差異：申報名目本金 - 成交張數
+            df_compare['差異'] = df_compare['今日預定承作名目本金(元)'].fillna(0) - df_compare['成交張數']
+            
+            # 找出不符合條件的記錄（申報名目本金 < 成交張數）
+            df_invalid = df_compare[df_compare['差異'] < 0].copy()
+            
+            # 找出在買進表格中有但申報文件中沒有的記錄
+            df_missing = df_compare[df_compare['今日預定承作名目本金(元)'].isna()].copy()
+            
+            # 顯示結果
+            if df_invalid.empty and df_missing.empty:
+                QMessageBox.information(self, "檢查申報", "✓ 所有申報名目本金都足夠！")
+            else:
+                error_msg = "檢查申報結果：\n\n"
+                
+                if not df_invalid.empty:
+                    error_msg += f"⚠ 申報不足（{len(df_invalid)}筆）：\n"
+                    for _, row in df_invalid.iterrows():
+                        error_msg += f"  CB代號: {row['CB代號']}, 客戶ID: {row['客戶ID']}\n"
+                        error_msg += f"    申報名目本金: {row['今日預定承作名目本金(元)']:.2f} 張, "
+                        error_msg += f"成交張數: {row['成交張數']:.0f} 張, "
+                        error_msg += f"不足: {abs(row['差異']):.2f} 張\n\n"
+                
+                if not df_missing.empty:
+                    error_msg += f"⚠ 未申報（{len(df_missing)}筆）：\n"
+                    for _, row in df_missing.iterrows():
+                        error_msg += f"  CB代號: {row['CB代號']}, 客戶ID: {row['客戶ID']}, "
+                        error_msg += f"成交張數: {row['成交張數']:.0f} 張\n"
+                
+                QMessageBox.warning(self, "檢查申報", error_msg)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "錯誤", f"檢查申報時發生錯誤：{e}")
+            import traceback
+            traceback.print_exc()
+
+    def add_asw_to_buy_table(self):
+        print("建設中")
 
 #====================載入時啟動====================
 
@@ -2338,7 +2483,7 @@ class TableEditor(QWidget):
             else:
                 df_buy_calculated['標的波動率'] = '0'
             df_buy_calculated['無風險利率'] = rf
-            df_buy_calculated['資金成本'] = '1.425'
+            df_buy_calculated['資金成本'] = '1.8'
             df_buy_calculated['轉債面額'] = '100000'
             df_buy_calculated['選擇權型態'] = 'C'
             df_buy_calculated['選擇權買賣別'] = 'S'

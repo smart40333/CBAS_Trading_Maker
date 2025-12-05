@@ -291,6 +291,13 @@ def generate_trade_notice_template(
         # 設定頁面和欄寬
         ws.page_setup.orientation = 'landscape'
         ws.page_setup.scale = 60
+        # 設定頁邊距為"窄"（Narrow margins）
+        ws.page_margins.left = 0.25  # 0.25 英寸
+        ws.page_margins.right = 0.25  # 0.25 英寸
+        ws.page_margins.top = 0.25  # 0.25 英寸
+        ws.page_margins.bottom = 0.25  # 0.25 英寸
+        ws.page_margins.header = 0.13  # 0.13 英寸
+        ws.page_margins.footer = 0.13  # 0.13 英寸
         _set_col_widths(ws)
 
         # === 頁首區域 ===
@@ -570,7 +577,7 @@ def generate_trade_notice_template(
                         continue
                 cell.fill = WHITE_FILL
 
-        yyyy_mm_dd = datetime.today().strftime('%Y-%m-%d')
+        yyyymmdd = datetime.today().strftime('%Y%m%d')
         
         # 正確處理客戶姓名
         if isinstance(cus_info, pd.DataFrame) and not cus_info.empty:
@@ -581,17 +588,12 @@ def generate_trade_notice_template(
             cusemail_full = ''
         
         # 姓名遮蔽處理
-        if len(cusname_full) >= 3:
-            cusName = cusname_full[0] + 'Ｏ' + cusname_full[-1]  # 張三丰 -> 張Ｏ丰
-        elif len(cusname_full) == 2:
-            cusName = cusname_full[0] + 'Ｏ'  # 張三 -> 張Ｏ
-        elif len(cusname_full) == 1:
-            cusName = cusname_full  # 王 -> 王
-        else:
-            cusName = '客戶'  # 空名稱
+
+        cusName = cusname_full[0] + 'Ｏ' + cusname_full[-1]
+
         
         cusEmail = cusemail_full[:4] if cusemail_full else ''
-        fileName = f"{yyyy_mm_dd}_統一證券CBAS成交明細_{cusName}_{cusEmail}.xlsx"
+        fileName = f"{yyyymmdd}_統一證券CBAS成交明細_{cusName}_{cusEmail}.xlsx"
         
         # 建立目錄路徑
         excel_dir = os.path.join(trade_notice_dir, tday_str, 'Excel')

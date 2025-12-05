@@ -354,7 +354,6 @@ def calculate_exercise_price(df_today_trade_sell):
     df_today_trade_sell['履約價'] = round(df_today_trade_sell['CBTPPRI'] - (df_today_trade_sell['CANRATE'] * (df_today_trade_sell['CBTPDT'] - df_today_trade_sell['DUEPAYDT'] + pd.Timedelta(days=1)).dt.days / 365), 2)
     return df_today_trade_sell
 
-
 def check_each01():
     conn = get_400_conn()
     df_each01 = strip_whitespace(pd.read_sql("SELECT * FROM fspflib.FSPEACH01", conn))
@@ -381,6 +380,7 @@ def check_each01():
 
 def read_today_bargain_and_execute():
     tday_str = datetime.today().strftime("%Y%m%d")
+    #tday_str = '20251204'
     df_today_bargain = pd.read_sql(f"""
         SELECT TXDATE, CUSID, ORDERNO, SETDAT, TXBS, STKID, MTHQTY, PRICE, MTHAMT FROM FSPFLIB.ASBARG WHERE TXDATE = '{tday_str}'
     """, get_400_conn())
@@ -434,8 +434,7 @@ def read_today_bargain_and_execute():
     df_today_bargain['金額'] = pd.to_numeric(df_today_bargain['金額'], errors='coerce').fillna(0)
     df_today_bargain['金額'] = df_today_bargain['金額'].apply(lambda x: f"{int(x):,}" if x == int(x) else f"{x:,.2f}")
 
-    df_today_bargain = df_today_bargain[['統一證買進/賣出', '交易對手', '單據編號', '集保帳號', '標的', '張數', '價格', '金額', '銀行帳號', '交割日', 'T+?']]
-
+    df_today_bargain = df_today_bargain[['客戶ID', '統一證買進/賣出', '交易對手', '單據編號', '集保帳號', '標的', '張數', '價格', '金額', '銀行帳號', '交割日', 'T+?']]
 
 #==================================實物履約=================================
     df_today_execute = strip_whitespace(pd.read_sql(f"""
