@@ -161,7 +161,7 @@ def get_trust_info(cusid_list: list[str]):
         f"SELECT CUSID, TRUSTEE, TRUSTNM, TRUSTTEL FROM FSPFLIB.FSPCS1M WHERE TRUTYPE = 'T' AND CUSID in ('{cusid_list}')", 
         conn
     )
-    return df_trust_info
+    return strip_whitespace(df_trust_info)
 
 def get_clearing_detail(tday):
     """

@@ -51,6 +51,7 @@ def query_expired_contracts(dateedit_expired, table_expired, df_quote, table_sel
 
 def get_expired_contracts(target_date=None, df_quote=None, table_sell=None, get_table_data_func=None):
     """取得已到期且未完全賣出的契約（用於表格顯示）"""
+    #todo: 改讀400的資料
     if target_date is None:
         tday = datetime.now().strftime('%Y%m%d')
     else:

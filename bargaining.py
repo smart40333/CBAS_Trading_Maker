@@ -8,6 +8,7 @@ from format_utils import format_date, convert_to_chinese_amount, strip_trailing_
 from file_reader import read_quote_excel, read_vip_list, read_vip_quote
 import pyodbc
 from decimal import Decimal, ROUND_HALF_UP
+from envs import bargain_pdf_path, bargain_upload_file_path
 
 
 
@@ -165,7 +166,7 @@ def generate_settlement_voucher(row: dict) -> str:
         ws['D7'] = 0
     
     tday = datetime.now().strftime('%Y%m%d')
-    output_dir = rf"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\{tday}"
+    output_dir = os.path.join(bargain_pdf_path, tday)
     os.makedirs(output_dir, exist_ok=True)
     filename = f"給付憑證_{row.get('客戶名稱', 'Unknown')}_{row.get('單據編號', '')}.xlsx"
     filepath = os.path.join(output_dir, filename)
@@ -197,7 +198,7 @@ def generate_trading_slip(row: dict) -> str:
     amount = str(row.get('議價金額', '')).replace(',', '').replace(' ', '')
     ws['B18'] = convert_to_chinese_amount(amount)
     tday = datetime.now().strftime('%Y%m%d')
-    output_dir = rf"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\{tday}"
+    output_dir = os.path.join(bargain_pdf_path, tday)
     os.makedirs(output_dir, exist_ok=True)
     filename = f"成交單_{row.get('客戶名稱', 'Unknown')}_{row.get('單據編號', '')}.xlsx"
     filepath = os.path.join(output_dir, filename)
@@ -223,10 +224,12 @@ def generate_bargain_upload_file(df_bargain):
     df_fill['OFFSET'] = 'Y'
     df_fill['RECUSER'] = '10112'
     df_fill['RECTIME'] = df_bargain['錄音時間']
-    df_fill.to_excel(r"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\議價檔ASBARG上傳檔.xlsx", index=False)
+    filename = '議價檔ASBARG上傳檔.xlsx'
+    filepath = os.path.join(bargain_upload_file_path, filename)
+    df_fill.to_excel(filepath, index=False)
     return df_fill
     
-def calculate_new_trade_batch(trade_data: pd.DataFrame) -> pd.DataFrame:
+def calculate_new_trade_batch(trade_data: pd.DataFrame, settle_date) -> pd.DataFrame:
     """統一的新作買進批次計算 - 使用獨立模組讀取資料"""
     try:
         # 讀取所需資料
@@ -267,7 +270,8 @@ def calculate_new_trade_batch(trade_data: pd.DataFrame) -> pd.DataFrame:
         df_trade['賣回價'] = pd.to_numeric(df_trade['賣回價'], errors='coerce')
     
     # 計算年期
-        settle = next_business_day(pd.Timestamp.today().normalize(), 2).normalize()
+        #settle = next_business_day(pd.Timestamp.today().normalize(), 2).normalize()
+        settle = pd.to_datetime(settle_date).normalize()
         sellback = pd.to_datetime(df_trade['賣回日'], format='%Y%m%d').dt.normalize()
         df_trade['年期_app'] = ((sellback - settle).dt.days + 1) / 365
         
@@ -386,6 +390,7 @@ def bargain_sell(bargain_data_sell):
             if not df_exe.empty:
                 all_sell_data.append(df_exe)
         
+        print(all_sell_data)
         # 合併所有賣出資料
         if all_sell_data:
             df_all_sell = pd.concat(all_sell_data, ignore_index=True)
@@ -425,7 +430,7 @@ def fetch_exercise_contracts(cus_id: str, cb_code: str, trade_date: str, exercis
     
     df_contracts = strip_whitespace(pd.read_sql(sql_query, conn))
     df_contracts.columns = ['客戶ID', '原單契約編號', 'CB代號', '庫存張數', '原成交日期', '原利率', '賣回價', '賣回日']
-    
+    print(df_contracts)
     if df_contracts.empty:
         conn.close()
         print(f"沒有找到符合條件的契約")
@@ -512,6 +517,7 @@ def fetch_exercise_contracts(cus_id: str, cb_code: str, trade_date: str, exercis
 
     # 重新排列欄位順序
     df_exe = df_exe[sell_columns]
+    df_exe['履約方式'] = '1'
     
     print(f"已將 {len(df_exe)} 筆實物履約添加到提解賣出分頁！")
     return df_exe

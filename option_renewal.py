@@ -370,7 +370,7 @@ def update_renewal_table(table, df, columns):
 
 
 def transfer_renewal_data(table_renewal_buy, table_renewal_sell, df_original_contracts, 
-                         calculate_new_trade_batch, show_buy_table, show_sell_table):
+                         calculate_new_trade_batch, show_buy_table, show_sell_table, dateedit_settle):
     """將續期合約資料轉換為交易資料"""
     try:
         # 1. 處理左側買進資料
@@ -378,7 +378,8 @@ def transfer_renewal_data(table_renewal_buy, table_renewal_sell, df_original_con
         if not buy_data.empty:
             # 添加calculate_new_trade_batch需要的欄位
             tday = datetime.now()
-            settle_date = next_business_day(tday, 2)
+            settle_qdate = dateedit_settle.date()
+            settle_date = datetime(settle_qdate.year(), settle_qdate.month(), settle_qdate.day())
             
             # 重新命名和添加必要欄位
             buy_data = buy_data.rename(columns={
@@ -394,7 +395,7 @@ def transfer_renewal_data(table_renewal_buy, table_renewal_sell, df_original_con
             buy_data['成交金額'] = round(buy_data['成交張數'].astype(int) * buy_data['成交均價'].astype(float) * 1000, 0).astype(int)
             buy_data['來自'] = '續期'
             # 使用calculate_new_trade_batch處理買進資料
-            processed_buy_data = calculate_new_trade_batch(buy_data)
+            processed_buy_data = calculate_new_trade_batch(buy_data, settle_date)
             
             # 使用show_buy_table顯示買進資料
             show_buy_table(processed_buy_data)

@@ -22,12 +22,12 @@ from quote_calculator import QuoteCalculatorWindow
 from quote_table import QuoteTableWindow
 from option_renewal import (query_renewal_contracts, add_renewal_contract, 
                            update_renewal_table, transfer_renewal_data)
-from file_generator import generate_trade_notice_template
 from envs import trade_notice_dir
 from backend_process import (send_today_trade_email, send_bargain_trade_email, 
                              generate_today_detail, generate_trade_confirmation,
                              send_control_table_email, send_customer_positions_email,
                              clear_output_window, send_customer_detail_email)
+from envs import i_realized_file_path, upload_file_path
 #=============================================
 
 warnings.filterwarnings('ignore')  # 忽略所有警告
@@ -175,6 +175,7 @@ class RecordingPersonComboBoxDelegate(QStyledItemDelegate):
         editor.addItem("王慕約")
         editor.addItem("黃暐庭")
         editor.addItem("朱軒慧")
+        editor.addItem("周琬瑜")
         
         return editor
     
@@ -379,7 +380,7 @@ class TableEditor(QWidget):
         
         # 錄音表格
         self.table_recording = TableWidgetWithDelete()
-        recording_columns = ['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '買進張數', '賣出張數', '成交均價', 'CELLPHONE', '授權人', '授權人電話', '錄音時間', '錄音人員']
+        recording_columns = ['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '買進張數', '賣出張數', '成交均價', 'CELLPHONE', '被授權人', '被授權人電話', '錄音時間', '錄音人員']
         self.table_recording.setColumnCount(len(recording_columns))
         self.table_recording.setHorizontalHeaderLabels(recording_columns)
         self.table_recording.setSortingEnabled(True)  # 啟用欄位排序
@@ -798,7 +799,7 @@ class TableEditor(QWidget):
         
         self.btn_transfer_renewal = QPushButton("轉換")
         self.btn_transfer_renewal.setFixedSize(80, 40)  # 設定按鈕固定大小
-        self.btn_transfer_renewal.clicked.connect(lambda: transfer_renewal_data(self.table_renewal_buy, self.table_renewal_sell, self.df_original_contracts, calculate_new_trade_batch, self.show_buy_table, self.show_sell_table))
+        self.btn_transfer_renewal.clicked.connect(lambda: transfer_renewal_data(self.table_renewal_buy, self.table_renewal_sell, self.df_original_contracts, calculate_new_trade_batch, self.show_buy_table, self.show_sell_table, self.dateedit_settle))
         middle_layout.addWidget(self.btn_transfer_renewal)
         
         middle_layout.addStretch(1)  # 底部也添加空間
@@ -1424,11 +1425,6 @@ class TableEditor(QWidget):
         """產生新作買進上傳檔"""
         try:
             today = datetime.now().strftime('%Y%m%d')
-            today_dir = rf"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\{today}\上傳備份"
-            
-            # 檢查並創建今日資料夾
-            if not os.path.exists(today_dir):
-                os.makedirs(today_dir)
             
             # 讀取表格資料
             df = self.get_table_data(self.table_buy)
@@ -1461,12 +1457,13 @@ class TableEditor(QWidget):
             if reply == QMessageBox.No:
                 return
             
-            # 儲存檔案（不含標題行）
-            upload_file_path = os.path.join(today_dir, f"新作上傳檔.csv")
-            df_upload.to_csv(upload_file_path, index=False, encoding='cp950', header=False)
-            df.to_excel(os.path.join(today_dir, f"新作上傳檔_{today}.xlsx"), index=False)
+            # 儲存檔案（不含標題行
+            history_folder = os.path.join(upload_file_path, f'歷史上傳檔\{today}')
+            os.makedirs(history_folder, exist_ok=True)
+            df_upload.to_csv(os.path.join(upload_file_path, "新作上傳檔.csv"), index=False, encoding='cp950', header=False)
+            df.to_excel(os.path.join(history_folder, f"新作上傳檔_{today}.xlsx"), index=False)
             
-            QMessageBox.information(self, "產生成功", f"新作買進上傳檔已產生：\n{upload_file_path}")
+            QMessageBox.information(self, "產生成功", f"新作買進上傳檔已產生：\n{os.path.join(upload_file_path, f'新作上傳檔.csv')}")
             
         except Exception as e:
             QMessageBox.critical(self, "產生失敗", f"發生錯誤：{e}")
@@ -1475,12 +1472,6 @@ class TableEditor(QWidget):
         """產生提解賣出上傳檔"""
         try:
             today = datetime.now().strftime('%Y%m%d')
-            today_dir = rf"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\{today}\上傳備份"
-            
-            # 檢查並創建今日資料夾
-            if not os.path.exists(today_dir):
-                os.makedirs(today_dir)
-            
             # 讀取表格資料
             df = self.get_table_data(self.table_sell)
             
@@ -1517,14 +1508,13 @@ class TableEditor(QWidget):
             if reply == QMessageBox.No:
                 return
             
-            # 上傳檔案路徑
-            upload_file_path = os.path.join(today_dir, f"解約上傳檔.csv")
-            
             # 儲存檔案（不含標題行）
-            df_upload.to_csv(upload_file_path, index=False, encoding='cp950', header=False)
-            df.to_excel(os.path.join(today_dir, f"解約上傳檔_{today}.xlsx"), index=False)
+            history_folder = os.path.join(upload_file_path, f'歷史上傳檔\{today}')
+            os.makedirs(history_folder, exist_ok=True)
+            df_upload.to_csv(os.path.join(upload_file_path, f"解約上傳檔.csv"), index=False, encoding='cp950', header=False)
+            df.to_excel(os.path.join(history_folder, f"解約上傳檔_{today}.xlsx"), index=False)
             
-            QMessageBox.information(self, "產生成功", f"提解賣出上傳檔已產生：\n{upload_file_path}")
+            QMessageBox.information(self, "產生成功", f"提解賣出上傳檔已產生：\n{os.path.join(upload_file_path, f'解約上傳檔.csv')}")
             
         except Exception as e:
             QMessageBox.critical(self, "產生失敗", f"發生錯誤：{e}")
@@ -1683,6 +1673,7 @@ class TableEditor(QWidget):
             df_buy = self.get_table_data(self.table_buy)
             # 讀取提解賣出表格資料
             df_sell = self.get_table_data(self.table_sell)
+            df_sell = df_sell[df_sell['來自']!='到期']
             
             # 篩選錄音時間不為'E'的資料
             if not df_buy.empty:
@@ -1748,6 +1739,7 @@ class TableEditor(QWidget):
             if cusid_list:
                 cus_info = get_customer_bank_and_email(cusid_list)
                 trust_info = get_trust_info(cusid_list)
+
                 # 合併CELLPHONE欄位
                 df_recording = df_recording.merge(
                     cus_info[['CUSID', 'CELLPHONE']], 
@@ -1755,12 +1747,15 @@ class TableEditor(QWidget):
                     right_on='CUSID', 
                     how='left'
                 )
+
+                df_recording.drop(columns=['CUSID'], inplace=True)
                 df_recording = df_recording.merge(
                     trust_info[['CUSID', 'TRUSTNM', 'TRUSTTEL']], 
                     left_on='客戶ID', 
                     right_on='CUSID', 
                     how='left'
                 )
+
                 # 移除臨時的CUSID欄位
                 if 'CUSID' in df_recording.columns:
                     df_recording = df_recording.drop(columns=['CUSID'])
@@ -1770,8 +1765,8 @@ class TableEditor(QWidget):
                 df_recording['TRUSTNM'] = ''
                 df_recording['TRUSTTEL'] = ''
 
-            df_recording['授權人'] = df_recording['TRUSTNM']
-            df_recording['授權人電話'] = df_recording['TRUSTTEL']
+            df_recording['被授權人'] = df_recording['TRUSTNM']
+            df_recording['被授權人電話'] = df_recording['TRUSTTEL']
             df_recording = df_recording.drop(columns=['TRUSTNM', 'TRUSTTEL'])
             # 添加錄音時間欄位
             df_recording['錄音時間'] = ''
@@ -1779,7 +1774,7 @@ class TableEditor(QWidget):
             df_recording['錄音人員'] = '蔡睿'
             
             # 重新排列欄位順序
-            df_recording = df_recording[['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '買進張數', '賣出張數', '成交均價', 'CELLPHONE', '授權人', '授權人電話', '錄音時間', '錄音人員']]
+            df_recording = df_recording[['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '買進張數', '賣出張數', '成交均價', 'CELLPHONE', '被授權人', '被授權人電話', '錄音時間', '錄音人員']]
             
             # 更新表格顯示
             self.update_recording_table(df_recording)
@@ -2125,7 +2120,10 @@ class TableEditor(QWidget):
                             '原單位權利金', '已實現損益']]
 
         tday = datetime.now().strftime('%Y%m%d')
-        df_reorg.to_excel(rf'\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\{tday}\i已實_CBAS契約檔_.xlsx', index=False, header=True)
+        history_folder = os.path.join(i_realized_file_path, '歷史i已實')
+        os.makedirs(history_folder, exist_ok=True)
+        df_reorg.to_excel(os.path.join(i_realized_file_path, 'i已實_CBAS契約檔_.xlsx'), index=False, header=True)
+        df_reorg.to_excel(os.path.join(history_folder, f'i已實_CBAS契約檔_{tday}.xlsx'), index=False, header=True)
         QMessageBox.information(self, "i已實儲存成功", "i已實儲存成功")
 
     def get_monitor_fill_sum_amt(self):
@@ -2425,7 +2423,40 @@ class TableEditor(QWidget):
             traceback.print_exc()
 
     def add_asw_to_buy_table(self):
-        print("建設中")
+        tday = datetime.now()
+        tdaystr = tday.strftime('%Y%m%d')
+        df_asw_buy = pd.read_excel(r'\\10.72.228.112\cbas業務公用區\CLN\ASW\新作上傳檔-ASW-B.xlsx')
+        df_asw_buy['交易日'] = df_asw_buy['交易日'].astype(str)
+        df_asw_buy['價格事件'] = df_asw_buy['價格事件'].astype(str).str.replace(r"\.0$", "", regex=True)
+        df_asw_buy = df_asw_buy[df_asw_buy['交易日'] == tdaystr]
+        df_asw_buy.rename(columns={
+            '客戶證號': '客戶ID',
+            '新作交割日': '交割日期',
+            '轉債代號': 'CB代號',
+            '轉債成交金額': '成交金額',
+            '轉債單位成本': '成交均價',
+            '契約編號': '固定端契約編號',
+            '附條件長約': '長約附加條款',
+
+        }, inplace=True)
+        df_asw_buy['來自'] = 'ASW'
+        # 取得主畫面 buy_table 欄位順序
+        buy_columns = [self.table_buy.horizontalHeaderItem(i).text() for i in range(self.table_buy.columnCount())]
+
+        # 按 buy_columns 重排 df_asw_buy，缺的欄位補空白
+        for col in buy_columns:
+            if col not in df_asw_buy.columns:
+                df_asw_buy[col] = ''
+        df_asw_buy = df_asw_buy[buy_columns]
+        df_asw_buy = df_asw_buy.applymap(lambda x: strip_trailing_zeros(x) if pd.notna(x) else '').astype(str)
+        # 將 df_asw_buy 逐行加入到 buy_table 裡面
+        for idx, row in df_asw_buy.iterrows():
+            rowPosition = self.table_buy.rowCount()
+            self.table_buy.insertRow(rowPosition)
+            for col_idx, col_name in enumerate(buy_columns):
+                item_value = '' if pd.isna(row[col_name]) else str(row[col_name])
+                item = QTableWidgetItem(item_value)
+                self.table_buy.setItem(rowPosition, col_idx, item)
 
 #====================載入時啟動====================
 
@@ -2802,7 +2833,7 @@ class TableEditor(QWidget):
             tday = datetime.now()
             df_buy = read_today_trade_buy(tday, settle_date)
             df_sell = read_today_trade_sell(tday, settle_date)
-            df_buy = calculate_new_trade_batch(df_buy)
+            df_buy = calculate_new_trade_batch(df_buy, settle_date)
             self.show_buy_table(df_buy)
             self.show_sell_table(df_sell)
             QMessageBox.information(self, "刷新成功", "資料已重新載入！")
@@ -2945,6 +2976,8 @@ class TableEditor(QWidget):
     def add_bargain_to_new_trade(self):
         """將議價交易添加到新作買進分頁"""
         try:
+            settle_qdate = self.dateedit_settle.date()
+            settle_date = datetime(settle_qdate.year(), settle_qdate.month(), settle_qdate.day())
             if self.table_bargain.rowCount() == 0:
                 QMessageBox.warning(self, "警告", "請先處理議價交易資料！")
                 return
@@ -2960,7 +2993,7 @@ class TableEditor(QWidget):
                 bargain_data_buy['成交均價'] = pd.to_numeric(bargain_data_buy['議價價格'], errors='coerce').fillna(0)
                 bargain_data_buy['成交金額'] = bargain_data_buy['議價金額'].str.replace(',', '', regex=False)
                 bargain_data_buy['交易類型'] = 'ASO'
-                convert_to_aso = calculate_new_trade_batch(bargain_data_buy)
+                convert_to_aso = calculate_new_trade_batch(bargain_data_buy, settle_date)
                 convert_to_aso['來自'] = '議價交易'
                 self.show_buy_table(convert_to_aso)
             
