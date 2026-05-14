@@ -477,13 +477,13 @@ def generate_trade_notice_template(
                 payment_method = "自動扣款" if ifbankok == 'Y' else "客戶匯款"
                 settle_rows.append([format_date(tday_plus_2), f"{abs(tday_plus_2_clearing_money):,}", "客戶付款", payment_method])
         
-        row = _write_table(ws, row, ["交易日期", "交割總額", "收付", "交割方式"], settle_rows, LIGHT_BLUE_FILL)
+        row = _write_table(ws, row, ["交割日期", "交割總額", "收付", "交割方式"], settle_rows, LIGHT_BLUE_FILL)
         
         # 加大"交割總額"列的寬度（B列，第2列）
         ws.column_dimensions['B'].width = 18
 
         # 建立交割資訊DataFrame（包含客戶ID和客戶名稱）
-        df_clearing_money_consolidate = pd.DataFrame(settle_rows, columns=["交易日期", "交割總額", "收付", "交割方式"])
+        df_clearing_money_consolidate = pd.DataFrame(settle_rows, columns=["交割日期", "交割總額", "收付", "交割方式"])
         # 添加客戶ID和客戶名稱欄位
         if isinstance(cus_info, pd.DataFrame) and not cus_info.empty:
             cus_name_full = cus_info.iloc[0].get('CUSNAME', '')
@@ -492,7 +492,7 @@ def generate_trade_notice_template(
                 df_clearing_money_consolidate.insert(1, '客戶名稱', cus_name_full)
             else:
                 # 即使沒有交割資訊，也建立包含客戶ID和客戶名稱的空DataFrame
-                df_clearing_money_consolidate = pd.DataFrame(columns=['客戶ID', '客戶名稱', '交易日期', '交割總額', '收付', '交割方式'])
+                df_clearing_money_consolidate = pd.DataFrame(columns=['客戶ID', '客戶名稱', '交割日期', '交割總額', '收付', '交割方式'])
 
         # === 備註說明 ===
         notes = (

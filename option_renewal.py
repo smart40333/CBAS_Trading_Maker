@@ -369,8 +369,9 @@ def update_renewal_table(table, df, columns):
             table.setItem(i, j, item)
 
 
-def transfer_renewal_data(table_renewal_buy, table_renewal_sell, df_original_contracts, 
-                         calculate_new_trade_batch, show_buy_table, show_sell_table, dateedit_settle):
+def transfer_renewal_data(table_renewal_buy, table_renewal_sell, df_original_contracts,
+                         calculate_new_trade_batch, show_buy_table, show_sell_table, dateedit_settle,
+                         default_fee: int = 150):
     """將續期合約資料轉換為交易資料"""
     try:
         # 1. 處理左側買進資料
@@ -395,7 +396,7 @@ def transfer_renewal_data(table_renewal_buy, table_renewal_sell, df_original_con
             buy_data['成交金額'] = round(buy_data['成交張數'].astype(int) * buy_data['成交均價'].astype(float) * 1000, 0).astype(int)
             buy_data['來自'] = '續期'
             # 使用calculate_new_trade_batch處理買進資料
-            processed_buy_data = calculate_new_trade_batch(buy_data, settle_date)
+            processed_buy_data = calculate_new_trade_batch(buy_data, settle_date, default_fee=default_fee)
             
             # 使用show_buy_table顯示買進資料
             show_buy_table(processed_buy_data)

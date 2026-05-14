@@ -37,7 +37,8 @@ def get_customer_info(cusid_list_padded: list[str]) -> pd.DataFrame:
         )
         df = pd.read_sql(sql_query, conn)
         return strip_whitespace(df)
-    except Exception:
+    except Exception as e:
+        print(f"get_customer_info 發生錯誤: {e}")
         return pd.DataFrame(columns=[
             'CUSID', 'CUSNAME', 'BNKNAME', 'BNKBRH', 'BNKACTNO', 'CENTERNO', 'ADDRESS2'
         ])
@@ -277,9 +278,16 @@ def get_today_trade_detail(tday_str):
         df_qty_left = pd.read_sql(
             f"SELECT PRDID as PRDID_QTY_LEFT, STORQTY as QTY_LEFT FROM FSPFLIB.ASPROD WHERE PRDID IN ('{prdids_str}')", conn
         ) # 剩餘庫存
+        prdid_asw = pd.read_sql(
+            f"SELECT PRDID FROM FSPFLIB.ASPROD WHERE PRDID IN ('{prdids_str}') AND TXTYPE = 'ASW'", conn
+        ) # ASW契約
     else:
         df_qty_left = pd.DataFrame(columns=['PRDID_QTY_LEFT', 'QTY_LEFT'])
+        prdid_asw = pd.DataFrame(columns=['PRDID'])
 
+    # 將 df_today_trade_sell 中 PRDID_SELL 有在 prdid_asw['PRDID'] 裡的資料篩掉
+    if not prdid_asw.empty and 'PRDID_SELL' in df_today_trade_sell.columns and 'PRDID' in prdid_asw.columns:
+        df_today_trade_sell = df_today_trade_sell[~df_today_trade_sell['PRDID_SELL'].isin(prdid_asw['PRDID'])]
     df_today_trade_sell = calculate_exercise_price(df_today_trade_sell) # 計算履約價
 
     df_today_trade = strip_whitespace(pd.concat([df_today_trade_buy, df_today_trade_sell])) # 合併新作和提解契約
@@ -424,8 +432,8 @@ def read_today_bargain_and_execute():
             t_plus += 1
         return f'T+{t_plus}'
     df_today_bargain['T+?'] = df_today_bargain.apply(lambda row: calc_t_plus(row, '成交日', '交割日'), axis=1)
-    df_today_bargain['標的'] = df_today_bargain['CB代號'] + ' ' + df_today_bargain['CB名稱']
-    df_today_bargain['銀行帳號'] = df_today_bargain['銀行'] + df_today_bargain['分行'] + df_today_bargain['銀行帳號']
+    df_today_bargain['標的'] = df_today_bargain['CB代號'].astype(str) + ' ' + df_today_bargain['CB名稱'].astype(str)
+    df_today_bargain['銀行帳號'] = df_today_bargain['銀行'].astype(str) + df_today_bargain['分行'].astype(str) + df_today_bargain['銀行帳號'].astype(str)
     
     # 格式化：標的、張數、金額去掉.0，金額添加千分位符
     df_today_bargain['標的'] = df_today_bargain['標的'].astype(str).str.replace(r'\.0\b', '', regex=True)
@@ -458,7 +466,7 @@ def read_today_bargain_and_execute():
         'BDE015': 'CB名稱',
     })
 
-    df_today_execute['標的'] = df_today_execute['CB代號'] + ' ' + df_today_execute['CB名稱']
+    df_today_execute['標的'] = df_today_execute['CB代號'].astype(str) + ' ' + df_today_execute['CB名稱'].astype(str)
     df_today_execute['T+?'] = df_today_execute.apply(lambda row: calc_t_plus(row, '履約日', '履約交割日'), axis=1)
     df_today_execute['履約張數'] = df_today_execute['履約張數'].astype(str).str.replace(r'\.0\b', '', regex=True)
     df_today_execute['買賣成交金額'] = pd.to_numeric(df_today_execute['買賣成交金額'], errors='coerce').fillna(0)

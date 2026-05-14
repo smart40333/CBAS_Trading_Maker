@@ -8,7 +8,7 @@ import pyodbc
 def strip_whitespace(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return df
-    return df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+    return df.map(lambda x: x.strip() if isinstance(x, str) else x)
 
 def format_date(date_str: str) -> str:
     if not date_str or len(str(date_str)) != 8:

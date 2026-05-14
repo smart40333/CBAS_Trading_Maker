@@ -289,8 +289,10 @@ def generate_today_detail(output_text_edit, parent):
         QMessageBox.information(parent, "提示", "今日成交明細產檔完成！開始寄信")
         
         df_customer_money = pd.read_excel(r'\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\交割資訊.xlsx')
-        df_customer_money = df_customer_money[['客戶ID', '交易日期', '交割總額', '收付', '交割方式']]
+        df_customer_money = df_customer_money[['客戶ID', '交割日期', '交割總額', '收付', '交割方式']]
 
+        #尚未完工，要將寄出的人避開不要再寄一次
+        df_have_been_send_emails = pd.DataFrame(columns=['CUSID', 'EMAIL'])
         for who in cusid_list:
             df_customer_money_person = df_customer_money[df_customer_money['客戶ID'] == who]
             df_customer_money_person.drop(columns=['客戶ID'], inplace=True)
