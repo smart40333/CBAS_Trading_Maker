@@ -1,10 +1,10 @@
 import pandas as pd
 import pyodbc
-from PyQt5.QtWidgets import QApplication, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QTabWidget, QHBoxLayout, QInputDialog, QLabel, QDateEdit, QLineEdit, QComboBox, QTextEdit, QStyledItemDelegate, QGroupBox, QFrame
+from PyQt5.QtWidgets import QApplication, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QTabWidget, QHBoxLayout, QInputDialog, QLabel, QDateEdit, QLineEdit, QComboBox, QTextEdit, QStyledItemDelegate, QGroupBox, QFrame, QRadioButton, QButtonGroup
 import sys
 from datetime import datetime, timedelta
 import numpy as np
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtGui import QColor, QFont, QIntValidator
 import warnings
 import os
 from PyQt5.QtCore import QDate, Qt, QObject, QEvent, QObject, QEvent
@@ -192,6 +192,169 @@ class RecordingPersonComboBoxDelegate(QStyledItemDelegate):
         text = editor.currentText()
         model.setData(index, text)
 
+class PenaltyCustomerDelegate(QStyledItemDelegate):
+    """客戶ID/客戶名稱下拉式選單委託類（雙向自動代出）
+
+    可重用於「罰金設定」與「特殊報價」分頁。
+    target='penalty' 或 'vip_quote'，控制要寫入哪個表格 / 是否提供 'ALL' 選項。
+    """
+    def __init__(self, parent=None, mode='id', target='penalty', allow_all=True):
+        super().__init__(parent)
+        self.parent = parent
+        self.mode = mode
+        self.target = target
+        self.allow_all = allow_all
+
+    def _get_table(self):
+        if self.parent is None:
+            return None
+        return getattr(self.parent, f'table_{self.target}', None)
+
+    def _get_col(self, name):
+        if self.parent is None:
+            return None
+        return self.parent.tab_col(self.target, name)
+
+    def createEditor(self, parent, option, index):
+        editor = QComboBox(parent)
+        editor.setEditable(True)
+        editor.setInsertPolicy(QComboBox.NoInsert)
+        if self.allow_all:
+            editor.addItem("ALL")
+        if self.parent is not None:
+            for customer in self.parent.get_customer_list():
+                editor.addItem(customer)
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.data()
+        if value:
+            editor.setCurrentText(str(value))
+
+    def setModelData(self, editor, model, index):
+        text = editor.currentText().strip()
+        if " - " in text:
+            cus_id, cus_name = [s.strip() for s in text.split(" - ", 1)]
+        else:
+            cus_id, cus_name = (text, '') if self.mode == 'id' else ('', text)
+            if self.parent is not None:
+                lookup_id, lookup_name = self.parent.lookup_customer(cus_id if self.mode == 'id' else cus_name, self.mode)
+                if lookup_id is not None:
+                    cus_id = lookup_id
+                if lookup_name is not None:
+                    cus_name = lookup_name
+
+        row = index.row()
+        table = self._get_table()
+        if self.mode == 'id':
+            model.setData(index, cus_id)
+            if table is not None and cus_name:
+                name_col = self._get_col('客戶名稱')
+                if name_col is not None:
+                    table.setItem(row, name_col, QTableWidgetItem(cus_name))
+        else:
+            model.setData(index, cus_name)
+            if table is not None and cus_id:
+                id_col = self._get_col('客戶ID')
+                if id_col is not None:
+                    table.setItem(row, id_col, QTableWidgetItem(cus_id))
+
+class PenaltyCBDelegate(QStyledItemDelegate):
+    """CB代號/CB名稱下拉式選單委託類（雙向自動代出）
+
+    可重用於「罰金設定」與「特殊報價」分頁。
+    fill_rate_col 指定要把報價表中的「低履約利率」自動填入哪個欄位（例如 '利率%'）。
+    """
+    def __init__(self, parent=None, mode='code', target='penalty', fill_rate_col=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.mode = mode
+        self.target = target
+        self.fill_rate_col = fill_rate_col
+
+    def _get_table(self):
+        if self.parent is None:
+            return None
+        return getattr(self.parent, f'table_{self.target}', None)
+
+    def _get_col(self, name):
+        if self.parent is None:
+            return None
+        return self.parent.tab_col(self.target, name)
+
+    def createEditor(self, parent, option, index):
+        editor = QComboBox(parent)
+        editor.setEditable(True)
+        editor.setInsertPolicy(QComboBox.NoInsert)
+        if self.parent is not None:
+            for cb in self.parent.get_cb_list():
+                editor.addItem(cb)
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.data()
+        if value:
+            editor.setCurrentText(str(value))
+
+    def setModelData(self, editor, model, index):
+        text = editor.currentText().strip()
+        if " - " in text:
+            cb_code, cb_name = [s.strip() for s in text.split(" - ", 1)]
+        else:
+            cb_code, cb_name = (text, '') if self.mode == 'code' else ('', text)
+            if self.parent is not None:
+                lookup_code, lookup_name = self.parent.lookup_cb(cb_code if self.mode == 'code' else cb_name, self.mode)
+                if lookup_code is not None:
+                    cb_code = lookup_code
+                if lookup_name is not None:
+                    cb_name = lookup_name
+
+        row = index.row()
+        table = self._get_table()
+        if self.mode == 'code':
+            model.setData(index, cb_code)
+            if table is not None and cb_name:
+                name_col = self._get_col('CB名稱')
+                if name_col is not None:
+                    table.setItem(row, name_col, QTableWidgetItem(cb_name))
+        else:
+            model.setData(index, cb_name)
+            if table is not None and cb_code:
+                code_col = self._get_col('CB代號')
+                if code_col is not None:
+                    table.setItem(row, code_col, QTableWidgetItem(cb_code))
+
+        # 取得 CB 後若需要，順便代入低履約利率
+        if self.fill_rate_col and table is not None and cb_code and self.parent is not None:
+            rate = self.parent.lookup_cb_rate(cb_code)
+            if rate is not None:
+                rate_col = self._get_col(self.fill_rate_col)
+                if rate_col is not None:
+                    cur = table.item(row, rate_col)
+                    if cur is None or not cur.text().strip():
+                        table.setItem(row, rate_col, QTableWidgetItem(str(rate)))
+
+class YesNoComboBoxDelegate(QStyledItemDelegate):
+    """Y/N 下拉式選單委託類，預設 'N'"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def createEditor(self, parent, option, index):
+        editor = QComboBox(parent)
+        editor.setEditable(False)
+        editor.setInsertPolicy(QComboBox.NoInsert)
+        editor.addItem("N")
+        editor.addItem("Y")
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.data()
+        editor.setCurrentText(str(value).strip().upper() if value and str(value).strip().upper() == 'Y' else 'N')
+
+    def setModelData(self, editor, model, index):
+        text = editor.currentText().strip().upper()
+        model.setData(index, 'Y' if text == 'Y' else 'N')
+
 #====================類外函數已移至類內部===================
 class TableEditor(QWidget):
 
@@ -278,9 +441,9 @@ class TableEditor(QWidget):
         
         # 新作買進表格
         self.table_buy = TableWidgetWithDelete()
-        buy_columns = ['新作契約編號', '上傳序號', '交易類型', '客戶ID', '客戶名稱', 'CB名稱', 'CB代號', '成交張數', '履約利率%', '成交均價', 
+        buy_columns = ['新作契約編號', '上傳序號', '交易類型', '客戶ID', '客戶名稱', 'CB名稱', 'CB代號', '成交張數', '履約利率%', '成交均價',
             '權利金百元價', '手續費(業務單位)', '成交金額', '單位權利金', '權利金總額', '錄音日期', '錄音時間', '交易日', '生效日', '交割日期', '選擇權到期日', '賣回日', '賣回價', '提前履約界限日', '提前履約賠償金', '標的波動率', '無風險利率',
-            '資金成本', '轉債面額', '選擇權型態', '選擇權買賣別', '報價方式', '短契約', '手續費(營業員)', '交易員', '營業員', '錄音人員', '子帳號', '固定端契約編號', '長約附加條款', '價格事件', '來自']
+            '資金成本', '轉債面額', '選擇權型態', '選擇權買賣別', '報價方式', '短契約', '手續費(營業員)', '交易員', '營業員', '錄音人員', '子帳號', '固定端契約編號', '長約附加條款', '價格事件', '來自', 'VIP報價張數', '罰金套用張數']
         self.table_buy.setColumnCount(len(buy_columns))
         self.table_buy.setHorizontalHeaderLabels(buy_columns)
         self.table_buy.setSortingEnabled(True)  # 啟用欄位排序
@@ -425,7 +588,7 @@ class TableEditor(QWidget):
         
         # VIP名單表格
         self.table_vip_list = TableWidgetWithDelete()
-        vip_list_columns = ['客戶ID', '客戶名稱', '不限張數低手續費', '不限張數低利率']
+        vip_list_columns = ['客戶ID', '客戶名稱', '不限張數低手續費', '不限張數低利率', '80元手續費']
         self.table_vip_list.setColumnCount(len(vip_list_columns))
         self.table_vip_list.setHorizontalHeaderLabels(vip_list_columns)
         
@@ -433,6 +596,88 @@ class TableEditor(QWidget):
         vip_list_layout.addWidget(vip_list_btn_frame)
         vip_list_layout.addWidget(self.table_vip_list)
         vip_list_widget.setLayout(vip_list_layout)
+
+        # 罰金設定分頁
+        penalty_widget = QWidget()
+        penalty_layout = QVBoxLayout()
+
+        # 罰金設定按鈕區域
+        penalty_btn_frame = QWidget()
+        penalty_btn_layout = QHBoxLayout()
+
+        self.btn_penalty_add = QPushButton("新增")
+        self.btn_penalty_add.setFixedSize(80, 30)
+        self.btn_penalty_add.clicked.connect(lambda: self.add_row_specific("罰金設定"))
+
+        self.btn_penalty_delete = QPushButton("刪除")
+        self.btn_penalty_delete.setFixedSize(80, 30)
+        self.btn_penalty_delete.clicked.connect(lambda: self.delete_row_specific("罰金設定"))
+
+        self.btn_penalty_save = QPushButton("儲存")
+        self.btn_penalty_save.setFixedSize(80, 30)
+        self.btn_penalty_save.clicked.connect(self.save_penalty_settings)
+
+        self.btn_penalty_help = QPushButton("規則說明 ▼")
+        self.btn_penalty_help.setFixedSize(120, 30)
+        self.btn_penalty_help.setCheckable(True)
+        self.btn_penalty_help.toggled.connect(self.toggle_penalty_help)
+
+        penalty_btn_layout.addWidget(self.btn_penalty_add)
+        penalty_btn_layout.addWidget(self.btn_penalty_delete)
+        penalty_btn_layout.addWidget(self.btn_penalty_save)
+        penalty_btn_layout.addWidget(self.btn_penalty_help)
+        penalty_btn_layout.addStretch()
+        penalty_btn_frame.setLayout(penalty_btn_layout)
+
+        # 規則說明（預設收合）
+        self.penalty_help_text = QTextEdit()
+        self.penalty_help_text.setReadOnly(True)
+        self.penalty_help_text.setPlainText(
+            "【罰金設定規則說明】\n"
+            "1. 此設定僅影響「新作買進」的「提前履約賠償金」欄位，\n"
+            "   不會改變權利金百元價、單位權利金、利率、手續費等其他計算。\n"
+            "2. 比對 key：客戶ID + CB代號。\n"
+            "   - 「客戶ID = ALL」+「CB代號 = 某檔」 → 所有客戶買該檔 CB 都套用。\n"
+            "   - 同檔 CB 若同時存在「特定客戶ID」與「ALL」設定 → 特定客戶優先。\n"
+            "3. 套用優先順序（賠償金張數會依此順序消耗）：\n"
+            "   (1) 特殊報價非短約 (短約=N 的特殊報價那段)\n"
+            "   (2) 一般計算 (無特殊報價的那段)\n"
+            "   ★ 特殊報價短約=Y 的那段「不套」罰金（保留原值）。\n"
+            "4. 拆單規則：\n"
+            "   - 「賠償金張數」留空 → 視為無上限，所有非短約段全套設定值。\n"
+            "   - 「賠償金張數」< 可套段的總張數 → 依優先順序消耗到 0 為止，\n"
+            "       未消耗到的張數自動拆出來、提前履約賠償金=0。\n"
+            "       拆單時「成交金額」「權利金總額」按比例重算，其餘單價/比率不動。\n"
+            "5. 「提前履約賠償金」欄位寫入的值 = 表中填寫的數值（不做單位換算）。\n"
+            "   新增空白列時，「提前履約賠償金」預設值為 0.25。\n"
+            "6. 產生上傳檔成功後會自動扣減本表的「賠償金張數」，並在「備註」追加扣減紀錄。\n"
+            "7. 賣出側賠償金計算已獨立處理，本設定不影響賣出。"
+        )
+        self.penalty_help_text.setStyleSheet(
+            "QTextEdit { background-color: #FFFBE6; border: 1px solid #E5C100; padding: 6px; }"
+        )
+        self.penalty_help_text.setFixedHeight(320)
+        self.penalty_help_text.setVisible(False)
+
+        # 罰金設定表格
+        self.table_penalty = TableWidgetWithDelete()
+        penalty_columns = ['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '賠償金張數', '提前履約賠償金', '備註']
+        self._penalty_columns = penalty_columns
+        self.table_penalty.setColumnCount(len(penalty_columns))
+        self.table_penalty.setHorizontalHeaderLabels(penalty_columns)
+        self.table_penalty.setSortingEnabled(True)
+
+        # 設定欄位自動代出 delegate
+        self.table_penalty.setItemDelegateForColumn(0, PenaltyCustomerDelegate(self, mode='id', target='penalty', allow_all=True))
+        self.table_penalty.setItemDelegateForColumn(1, PenaltyCustomerDelegate(self, mode='name', target='penalty', allow_all=True))
+        self.table_penalty.setItemDelegateForColumn(2, PenaltyCBDelegate(self, mode='code', target='penalty'))
+        self.table_penalty.setItemDelegateForColumn(3, PenaltyCBDelegate(self, mode='name', target='penalty'))
+
+        # 添加到主布局
+        penalty_layout.addWidget(penalty_btn_frame)
+        penalty_layout.addWidget(self.penalty_help_text)
+        penalty_layout.addWidget(self.table_penalty)
+        penalty_widget.setLayout(penalty_layout)
 
         # 特殊報價分頁
         vip_quote_widget = QWidget()
@@ -454,23 +699,76 @@ class TableEditor(QWidget):
         self.btn_vip_quote_save = QPushButton("儲存")
         self.btn_vip_quote_save.setFixedSize(80, 30)
         self.btn_vip_quote_save.clicked.connect(self.save_vip_quote)
-        
+
+        self.btn_vip_quote_help = QPushButton("規則說明 ▼")
+        self.btn_vip_quote_help.setFixedSize(120, 30)
+        self.btn_vip_quote_help.setCheckable(True)
+        self.btn_vip_quote_help.toggled.connect(self.toggle_vip_quote_help)
+
         # 添加到按鈕布局
         vip_quote_btn_layout.addWidget(self.btn_vip_quote_add)
         vip_quote_btn_layout.addWidget(self.btn_vip_quote_delete)
         vip_quote_btn_layout.addWidget(self.btn_vip_quote_save)
+        vip_quote_btn_layout.addWidget(self.btn_vip_quote_help)
         vip_quote_btn_layout.addStretch()
-        
+
         vip_quote_btn_frame.setLayout(vip_quote_btn_layout)
+
+        # 規則說明（預設收合）
+        self.vip_quote_help_text = QTextEdit()
+        self.vip_quote_help_text.setReadOnly(True)
+        self.vip_quote_help_text.setPlainText(
+            "【特殊報價規則說明】\n"
+            "1. 比對 key：客戶ID + CB代號。每筆設定僅作用在指定客戶+CB。\n"
+            "   - 不接受「客戶ID = ALL」（特殊報價是針對特定客戶的優惠）。\n"
+            "2. 欄位自動代出：\n"
+            "   - 「客戶ID」「客戶名稱」雙向：輸入其一另一個自動帶出（取自常用客戶維護）。\n"
+            "   - 「CB代號」「CB名稱」雙向：輸入其一另一個自動帶出（取自報價表）。\n"
+            "   - 選定 CB 後「利率%」自動代入報價表中該 CB 的「低履約利率」。\n"
+            "   - 新增空白列時「手續費」預設 100、「短約」預設 N。\n"
+            "3. 拆單規則（張數受限時）：\n"
+            "   - 「張數」留空 → 視為無上限，整筆套用特殊報價的利率/手續費。\n"
+            "   - 「張數」< 今日該客戶+CB 成交張數 → 自動拆單：\n"
+            "       前 N 張套用特殊報價的利率與手續費；\n"
+            "       剩餘張數進入下一筆特殊報價（若有）或一般計算規則。\n"
+            "4. 同一 (客戶ID, CB代號) 可設定多筆，套用優先順序：\n"
+            "   (1) 短約 = Y 的設定 ← 最優先\n"
+            "   (2) 短約 = N 的設定\n"
+            "   (3) 都用完後剩餘張數 → 一般計算（VIP 名單 / 特殊ID / 基礎規則）\n"
+            "   例：A 客戶買 12345 共 60張；特殊報價設定有「30張短約Y」與「20張短約N」\n"
+            "       → 30張優先套短約Y、20張套短約N、剩餘 10張走一般計算。\n"
+            "5. 短約 = Y 的效果（僅影響該段拆單後的買進列）：\n"
+            "   - 「短契約」欄位 → 'Y'\n"
+            "   - 「選擇權到期日」→ 今日 + 90 calendar days，遇假日順延至下個工作日\n"
+            "   - 其餘欄位（賣回日、賣回價、利率、手續費等）皆不改動。\n"
+            "6. 與「罰金設定」互動：\n"
+            "   - 短約 = Y 的那段 → 不套罰金（保留原值）。\n"
+            "   - 短約 = N 的那段、一般計算的那段 → 依罰金設定優先順序套用。\n"
+            "7. 產生上傳檔成功後會自動扣減本表的「張數」，並在「備註」追加扣減紀錄。"
+        )
+        self.vip_quote_help_text.setStyleSheet(
+            "QTextEdit { background-color: #FFFBE6; border: 1px solid #E5C100; padding: 6px; }"
+        )
+        self.vip_quote_help_text.setFixedHeight(420)
+        self.vip_quote_help_text.setVisible(False)
         
         # 特殊報價表格
         self.table_vip_quote = TableWidgetWithDelete()
-        vip_quote_columns = ['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '利率%', '手續費']
+        vip_quote_columns = ['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '利率%', '手續費', '張數', '短約', '備註']
+        self._vip_quote_columns = vip_quote_columns
         self.table_vip_quote.setColumnCount(len(vip_quote_columns))
         self.table_vip_quote.setHorizontalHeaderLabels(vip_quote_columns)
-        
+
+        # 欄位自動代出 delegate
+        self.table_vip_quote.setItemDelegateForColumn(0, PenaltyCustomerDelegate(self, mode='id', target='vip_quote', allow_all=False))
+        self.table_vip_quote.setItemDelegateForColumn(1, PenaltyCustomerDelegate(self, mode='name', target='vip_quote', allow_all=False))
+        self.table_vip_quote.setItemDelegateForColumn(2, PenaltyCBDelegate(self, mode='code', target='vip_quote', fill_rate_col='利率%'))
+        self.table_vip_quote.setItemDelegateForColumn(3, PenaltyCBDelegate(self, mode='name', target='vip_quote', fill_rate_col='利率%'))
+        self.table_vip_quote.setItemDelegateForColumn(7, YesNoComboBoxDelegate(self))
+
         # 添加到主布局
         vip_quote_layout.addWidget(vip_quote_btn_frame)
+        vip_quote_layout.addWidget(self.vip_quote_help_text)
         vip_quote_layout.addWidget(self.table_vip_quote)
         vip_quote_widget.setLayout(vip_quote_layout)
 
@@ -799,7 +1097,7 @@ class TableEditor(QWidget):
         
         self.btn_transfer_renewal = QPushButton("轉換")
         self.btn_transfer_renewal.setFixedSize(80, 40)  # 設定按鈕固定大小
-        self.btn_transfer_renewal.clicked.connect(lambda: transfer_renewal_data(self.table_renewal_buy, self.table_renewal_sell, self.df_original_contracts, calculate_new_trade_batch, self.show_buy_table, self.show_sell_table, self.dateedit_settle))
+        self.btn_transfer_renewal.clicked.connect(lambda: transfer_renewal_data(self.table_renewal_buy, self.table_renewal_sell, self.df_original_contracts, calculate_new_trade_batch, lambda df: self.show_buy_table(self.apply_penalty_settings(df)), self.show_sell_table, self.dateedit_settle, default_fee=self.get_default_fee()))
         middle_layout.addWidget(self.btn_transfer_renewal)
         
         middle_layout.addStretch(1)  # 底部也添加空間
@@ -877,16 +1175,34 @@ class TableEditor(QWidget):
         self.btn_refresh_quote.clicked.connect(self.refresh_quote)
         self.btn_open_quote.clicked.connect(self.open_quote_file)
 
+        # ===== 預設手續費控件 =====
+        self.fee_default_radio = QRadioButton("預設手續費")
+        self.fee_custom_radio = QRadioButton("自訂")
+        self.fee_default_radio.setChecked(True)
+        self.fee_button_group = QButtonGroup(self)
+        self.fee_button_group.addButton(self.fee_default_radio)
+        self.fee_button_group.addButton(self.fee_custom_radio)
+        self.fee_custom_edit = QLineEdit("150")
+        self.fee_custom_edit.setFixedWidth(50)
+        self.fee_custom_edit.setValidator(QIntValidator(0, 250, self))
+        self.fee_custom_edit.setEnabled(False)
+        self.fee_custom_radio.toggled.connect(self.fee_custom_edit.setEnabled)
+
         # 主 layout
         main_layout = QVBoxLayout()
-        # ===== 交割日區塊 =====
+        # ===== 交割日 + 預設手續費區塊 =====
         settle_layout = QHBoxLayout()
         settle_layout.addStretch()
         settle_layout.addWidget(self.label_settle)
         settle_layout.addWidget(self.dateedit_settle)
+        settle_layout.addSpacing(30)
+        settle_layout.addWidget(self.fee_default_radio)
+        settle_layout.addWidget(self.fee_custom_radio)
+        settle_layout.addWidget(self.fee_custom_edit)
         settle_layout.addStretch()
         main_layout.addLayout(settle_layout)
-        
+
+
         # 全局按鈕布局
         global_btn_layout = QHBoxLayout()
         global_btn_layout.addStretch()
@@ -944,6 +1260,7 @@ class TableEditor(QWidget):
         
         # 將所有現有的widget添加到交易處理的子分頁中
         trading_tabs.addTab(buy_widget, "新作買進")
+        trading_tabs.addTab(penalty_widget, "罰金設定")
         trading_tabs.addTab(sell_widget, "提解賣出")
         trading_tabs.addTab(recording_widget, "錄音")
         trading_tabs.addTab(vip_list_widget, "VIP名單")
@@ -1118,15 +1435,26 @@ class TableEditor(QWidget):
     def loading_vips(self):
         """載入VIP資料並更新UI表格"""
         from file_reader import load_vip_data, get_daily_bond_rate
-        
+
+        # 載入罰金設定（與 VIP 一起在啟動時讀入）
+        try:
+            self.loading_penalty_settings()
+        except Exception as e:
+            print(f"載入罰金設定時發生錯誤：{e}")
+
         # 使用 file_reader 模組讀取VIP資料
         df_vip_list, df_vip_quote = load_vip_data()
-        
+
         # 更新VIP名單表格
+        light_blue = QColor(204, 229, 255)
         self.table_vip_list.setRowCount(len(df_vip_list))
         for i, row in df_vip_list.iterrows():
             for j, col in enumerate(df_vip_list.columns):
-                item = QTableWidgetItem(str(row[col]))
+                val = row[col]
+                text = '' if pd.isna(val) else str(val)
+                item = QTableWidgetItem(text)
+                if col == '80元手續費' and text.strip().upper() == 'Y':
+                    item.setBackground(light_blue)
                 self.table_vip_list.setItem(i, j, item)
 
         # 更新特殊報價資料表格
@@ -1159,6 +1487,8 @@ class TableEditor(QWidget):
             table = self.table_vip_list
         elif tab_name == "特殊報價":
             table = self.table_vip_quote
+        elif tab_name == "罰金設定":
+            table = self.table_penalty
         elif tab_name == "議價交易":
             table = self.table_bargain
         elif tab_name == "實物履約":
@@ -1171,14 +1501,29 @@ class TableEditor(QWidget):
             table = self.table_customer
         else:
             return
-            
+
         row_count = table.rowCount()
         table.insertRow(row_count)
-        
+
         # 為每個欄位設定預設值
         for col in range(table.columnCount()):
             item = QTableWidgetItem("")
             table.setItem(row_count, col, item)
+
+        # 罰金設定預設值：提前履約賠償金 = 0.25
+        if tab_name == "罰金設定":
+            penalty_amt_col = self.tab_col('penalty', '提前履約賠償金')
+            if penalty_amt_col is not None:
+                table.setItem(row_count, penalty_amt_col, QTableWidgetItem("0.25"))
+
+        # 特殊報價預設值：手續費 = 100、短約 = N
+        if tab_name == "特殊報價":
+            fee_col = self.tab_col('vip_quote', '手續費')
+            if fee_col is not None:
+                table.setItem(row_count, fee_col, QTableWidgetItem("100"))
+            short_col = self.tab_col('vip_quote', '短約')
+            if short_col is not None:
+                table.setItem(row_count, short_col, QTableWidgetItem("N"))
         
         # 議價交易分頁的特殊處理
         if tab_name == "議價交易":
@@ -1241,7 +1586,316 @@ class TableEditor(QWidget):
                 if customer_id and customer_name:
                     customers.append(f"{customer_id} - {customer_name}")
         return customers
-    
+
+    # ===== 罰金設定 / 特殊報價 等表格的 helpers =====
+    def tab_col(self, target, name):
+        """通用：取得指定 tab 的指定欄位 index。
+
+        target 例如 'penalty' / 'vip_quote'，會去找 self._{target}_columns 屬性。
+        """
+        cols = getattr(self, f'_{target}_columns', None)
+        if cols and name in cols:
+            return cols.index(name)
+        return None
+
+    def penalty_col(self, name):
+        """取得罰金設定表格指定欄位的索引（保留以相容舊呼叫）"""
+        return self.tab_col('penalty', name)
+
+    def lookup_cb_rate(self, cb_code):
+        """從報價表查 CB 的低履約利率，找不到回傳 None"""
+        if not cb_code:
+            return None
+        cb_code = str(cb_code).strip()
+        for df_attr in ('df_quote', 'df_cbinfo'):
+            df = getattr(self, df_attr, None)
+            if df is None or df.empty:
+                continue
+            if 'CB代號' not in df.columns or '低履約利率' not in df.columns:
+                continue
+            matches = df[df['CB代號'].astype(str).str.strip() == cb_code]
+            if not matches.empty:
+                rate = matches.iloc[0]['低履約利率']
+                if pd.notna(rate):
+                    return rate
+        return None
+
+    def get_cb_list(self):
+        """取得 CB 代號-名稱清單，格式為 'CB代號 - CB名稱'"""
+        result = []
+        seen = set()
+        for df_attr in ('df_cbinfo', 'df_quote'):
+            df = getattr(self, df_attr, None)
+            if df is None or df.empty:
+                continue
+            if 'CB代號' not in df.columns or 'CB名稱' not in df.columns:
+                continue
+            for _, row in df.iterrows():
+                code = str(row.get('CB代號', '')).strip()
+                name = str(row.get('CB名稱', '')).strip()
+                if not code or code.lower() == 'nan':
+                    continue
+                if code in seen:
+                    continue
+                seen.add(code)
+                result.append(f"{code} - {name}")
+        return result
+
+    def lookup_customer(self, value, by):
+        """以客戶ID或客戶名稱查另一個值。回傳 (id, name)，找不到的那一邊為 None。
+
+        by='id'   → value 視為客戶ID，回傳該客戶的 (id, name)
+        by='name' → value 視為客戶名稱，回傳該客戶的 (id, name)
+        """
+        if not value:
+            return (None, None)
+        value = str(value).strip()
+        if value.upper() == 'ALL' and by == 'id':
+            return ('ALL', '')
+        if hasattr(self, 'table_customer'):
+            t = self.table_customer
+            for r in range(t.rowCount()):
+                id_item = t.item(r, 0)
+                name_item = t.item(r, 1)
+                if not id_item or not name_item:
+                    continue
+                cid = id_item.text().strip()
+                cname = name_item.text().strip()
+                if by == 'id' and cid == value:
+                    return (cid, cname)
+                if by == 'name' and cname == value:
+                    return (cid, cname)
+        return (value, None) if by == 'id' else (None, value)
+
+    def lookup_cb(self, value, by):
+        """以 CB代號 或 CB名稱 查另一個值。回傳 (code, name)，找不到的那一邊為 None。"""
+        if not value:
+            return (None, None)
+        value = str(value).strip()
+        for df_attr in ('df_cbinfo', 'df_quote'):
+            df = getattr(self, df_attr, None)
+            if df is None or df.empty:
+                continue
+            if 'CB代號' not in df.columns or 'CB名稱' not in df.columns:
+                continue
+            col = 'CB代號' if by == 'code' else 'CB名稱'
+            matches = df[df[col].astype(str).str.strip() == value]
+            if not matches.empty:
+                code = str(matches.iloc[0]['CB代號']).strip()
+                name = str(matches.iloc[0]['CB名稱']).strip()
+                return (code, name)
+        return (value, None) if by == 'code' else (None, value)
+
+    def toggle_penalty_help(self, checked):
+        """切換罰金設定規則說明顯示"""
+        self.penalty_help_text.setVisible(checked)
+        self.btn_penalty_help.setText("規則說明 ▲" if checked else "規則說明 ▼")
+
+    def toggle_vip_quote_help(self, checked):
+        """切換特殊報價規則說明顯示"""
+        self.vip_quote_help_text.setVisible(checked)
+        self.btn_vip_quote_help.setText("規則說明 ▲" if checked else "規則說明 ▼")
+
+    def loading_penalty_settings(self):
+        """載入罰金設定資料"""
+        try:
+            from file_reader import read_penalty_settings, PENALTY_SETTINGS_COLUMNS
+        except ImportError:
+            return
+        df_penalty = read_penalty_settings()
+        self.table_penalty.setSortingEnabled(False)
+        self.table_penalty.setRowCount(len(df_penalty))
+        for i, row in df_penalty.iterrows():
+            for j, col in enumerate(PENALTY_SETTINGS_COLUMNS):
+                val = row.get(col, '')
+                text = '' if pd.isna(val) else str(val)
+                self.table_penalty.setItem(i, j, QTableWidgetItem(text))
+        self.table_penalty.setSortingEnabled(True)
+
+    def save_penalty_settings(self):
+        """儲存罰金設定到 CSV"""
+        try:
+            df = self.get_table_data(self.table_penalty)
+            penalty_path = r"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\Penalty_Settings.csv"
+            # 即使資料為空也允許儲存（清空檔案）
+            if df.empty:
+                from file_reader import PENALTY_SETTINGS_COLUMNS
+                df = pd.DataFrame(columns=PENALTY_SETTINGS_COLUMNS)
+            df.to_csv(penalty_path, index=False, encoding='utf-8-sig', header=True)
+            QMessageBox.information(self, "儲存成功", f"罰金設定已儲存至：\n{penalty_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "儲存失敗", f"發生錯誤：{e}")
+
+    def apply_penalty_settings(self, df_buy):
+        """將罰金設定套用到計算完畢的買進資料。
+
+        - 比對 key：客戶ID + CB代號（特定客戶優先於 ALL）。
+        - 短約=Y 的列不套罰金（保留原值）。
+        - 同 key 的多筆 buy row（拆單後）依優先順序消耗賠償金張數：
+            1) 特殊報價非短約 (VIP報價張數>0 且 _短約!='Y')
+            2) 一般計算 (VIP報價張數==0)
+        - 賠償金張數為空 → 視為無上限，所有非短約 row 全套。
+        - 拆單時「成交金額」「權利金總額」按比例重算，其他單價/比率不動。
+        - 在每筆 row 標記 `罰金套用張數` 供日後扣減 CSV 使用。
+        """
+        try:
+            if df_buy is None or df_buy.empty:
+                return df_buy
+
+            df_penalty = self.get_table_data(self.table_penalty)
+            if df_penalty.empty:
+                if '罰金套用張數' not in df_buy.columns:
+                    df_buy = df_buy.copy()
+                    df_buy['罰金套用張數'] = 0
+                return df_buy
+
+            # 整理罰金規則：建立 (客戶ID, CB代號) → 規則 的查表
+            rules = {}
+            for _, prow in df_penalty.iterrows():
+                cus_id = str(prow.get('客戶ID', '')).strip()
+                cb_code = str(prow.get('CB代號', '')).strip()
+                if not cus_id or not cb_code:
+                    continue
+                qty_raw = str(prow.get('賠償金張數', '')).strip()
+                amt_raw = str(prow.get('提前履約賠償金', '')).strip()
+                try:
+                    qty = int(float(qty_raw)) if qty_raw else None
+                except (ValueError, TypeError):
+                    qty = None
+                try:
+                    amt = float(amt_raw) if amt_raw else 0.0
+                except (ValueError, TypeError):
+                    amt = 0.0
+                rules[(cus_id, cb_code)] = {'qty': qty, 'amt': amt}
+
+            if not rules:
+                if '罰金套用張數' not in df_buy.columns:
+                    df_buy = df_buy.copy()
+                    df_buy['罰金套用張數'] = 0
+                return df_buy
+
+            df_buy = df_buy.copy().reset_index(drop=True)
+            if '罰金套用張數' not in df_buy.columns:
+                df_buy['罰金套用張數'] = 0
+
+            def _split_row(base_row, new_qty, total_qty, penalty_value, penalty_used_qty):
+                r = base_row.copy()
+                r['成交張數'] = new_qty
+                for col in ('成交金額', '權利金總額'):
+                    if col in r.index:
+                        try:
+                            old = float(r[col])
+                            r[col] = int(round(old * new_qty / total_qty))
+                        except (ValueError, TypeError):
+                            pass
+                if 'VIP報價張數' in r.index:
+                    try:
+                        old_vip = int(float(r['VIP報價張數']))
+                        if total_qty > 0:
+                            r['VIP報價張數'] = int(round(old_vip * new_qty / total_qty))
+                    except (ValueError, TypeError):
+                        pass
+                r['提前履約賠償金'] = str(penalty_value)
+                r['罰金套用張數'] = int(penalty_used_qty)
+                return r
+
+            def _is_short(r):
+                v = r.get('_短約')
+                if v is None or (isinstance(v, float) and pd.isna(v)):
+                    v = r.get('短契約')
+                return str(v).strip().upper() == 'Y' if v is not None else False
+
+            def _is_vip_n(r):
+                """特殊報價（非短約）：VIP報價張數>0 且 不是短約Y"""
+                try:
+                    vq = int(float(r.get('VIP報價張數', 0)))
+                except (ValueError, TypeError):
+                    vq = 0
+                return vq > 0 and not _is_short(r)
+
+            def _is_general(r):
+                """一般計算：VIP報價張數==0 且 不是短約Y"""
+                try:
+                    vq = int(float(r.get('VIP報價張數', 0)))
+                except (ValueError, TypeError):
+                    vq = 0
+                return vq == 0 and not _is_short(r)
+
+            # 依 (客戶ID, CB代號) 分組
+            # 為了維持原本順序，記錄每個 row 的 original index
+            df_buy['_orig_idx'] = range(len(df_buy))
+            output_rows = []  # (orig_idx, row)
+            grouped = df_buy.groupby(['客戶ID', 'CB代號'], sort=False)
+
+            for (cus_id, cb_code), group_df in grouped:
+                cus_id = str(cus_id).strip()
+                cb_code = str(cb_code).strip()
+                rule = rules.get((cus_id, cb_code)) or rules.get(('ALL', cb_code))
+
+                if rule is None:
+                    for _, r in group_df.iterrows():
+                        output_rows.append((r['_orig_idx'], r))
+                    continue
+
+                penalty_qty_budget = rule['qty']  # None = 無上限
+                penalty_amt = rule['amt']
+
+                # 先把短約Y 的列原樣放回（不套罰金）
+                for _, r in group_df.iterrows():
+                    if _is_short(r):
+                        output_rows.append((r['_orig_idx'], r))
+
+                # 依優先順序處理：特殊報價非短約 → 一般
+                vip_n_rows = [r for _, r in group_df.iterrows() if _is_vip_n(r)]
+                general_rows = [r for _, r in group_df.iterrows() if _is_general(r)]
+
+                remaining_budget = None if penalty_qty_budget is None else max(0, int(penalty_qty_budget))
+
+                for priority_list in (vip_n_rows, general_rows):
+                    for r in priority_list:
+                        try:
+                            row_qty = int(float(r.get('成交張數', 0)))
+                        except (ValueError, TypeError):
+                            row_qty = 0
+                        if row_qty <= 0:
+                            output_rows.append((r['_orig_idx'], r))
+                            continue
+
+                        if remaining_budget is None:
+                            r2 = r.copy()
+                            r2['提前履約賠償金'] = str(penalty_amt)
+                            r2['罰金套用張數'] = row_qty
+                            output_rows.append((r['_orig_idx'], r2))
+                        elif remaining_budget >= row_qty:
+                            r2 = r.copy()
+                            r2['提前履約賠償金'] = str(penalty_amt)
+                            r2['罰金套用張數'] = row_qty
+                            output_rows.append((r['_orig_idx'], r2))
+                            remaining_budget -= row_qty
+                        elif remaining_budget > 0:
+                            take = remaining_budget
+                            rest = row_qty - take
+                            rp = _split_row(r, take, row_qty, penalty_amt, take)
+                            rr = _split_row(r, rest, row_qty, 0, 0)
+                            output_rows.append((r['_orig_idx'], rp))
+                            output_rows.append((r['_orig_idx'] + 0.5, rr))
+                            remaining_budget = 0
+                        else:
+                            output_rows.append((r['_orig_idx'], r))
+
+            # 依原始順序輸出
+            output_rows.sort(key=lambda x: x[0])
+            result = pd.DataFrame([r for _, r in output_rows]).reset_index(drop=True)
+            if '_orig_idx' in result.columns:
+                result = result.drop(columns=['_orig_idx'])
+            return result
+
+        except Exception as e:
+            print(f"套用罰金設定時發生錯誤：{e}")
+            import traceback
+            traceback.print_exc()
+            return df_buy
+
     def setup_renewal_input_search(self):
         """設置選擇權續期輸入框的搜尋功能"""
         # 設置客戶ID搜尋功能
@@ -1358,6 +2012,8 @@ class TableEditor(QWidget):
             table = self.table_vip_list
         elif tab_name == "特殊報價":
             table = self.table_vip_quote
+        elif tab_name == "罰金設定":
+            table = self.table_penalty
         elif tab_name == "議價交易":
             table = self.table_bargain
         elif tab_name == "實物履約":
@@ -1462,11 +2118,183 @@ class TableEditor(QWidget):
             os.makedirs(history_folder, exist_ok=True)
             df_upload.to_csv(os.path.join(upload_file_path, "新作上傳檔.csv"), index=False, encoding='cp950', header=False)
             df.to_excel(os.path.join(history_folder, f"新作上傳檔_{today}.xlsx"), index=False)
-            
+
+            # 產檔成功後扣減 VIP_Quote 張數
+            try:
+                self._deduct_vip_quote_after_upload(df, today)
+            except Exception as dedu_err:
+                print(f"扣減 VIP_Quote 張數失敗：{dedu_err}")
+
+            # 產檔成功後扣減 Penalty_Settings 張數
+            try:
+                self._deduct_penalty_after_upload(df, today)
+            except Exception as dedu_err:
+                print(f"扣減 Penalty_Settings 張數失敗：{dedu_err}")
+
             QMessageBox.information(self, "產生成功", f"新作買進上傳檔已產生：\n{os.path.join(upload_file_path, f'新作上傳檔.csv')}")
-            
+
         except Exception as e:
             QMessageBox.critical(self, "產生失敗", f"發生錯誤：{e}")
+
+    def _deduct_vip_quote_after_upload(self, df_buy, today_str):
+        """產檔成功後依 VIP報價張數 扣減 VIP_Quote.csv 的張數並追加備註"""
+        if 'VIP報價張數' not in df_buy.columns:
+            return
+        df_vip_used = df_buy[['客戶ID', 'CB代號', 'VIP報價張數']].copy()
+        df_vip_used['VIP報價張數'] = pd.to_numeric(df_vip_used['VIP報價張數'], errors='coerce').fillna(0).astype(int)
+        df_vip_used = df_vip_used[df_vip_used['VIP報價張數'] > 0]
+        if df_vip_used.empty:
+            return
+        df_vip_used['客戶ID'] = df_vip_used['客戶ID'].astype(str).str.strip()
+        df_vip_used['CB代號'] = df_vip_used['CB代號'].astype(str).str.strip()
+        consumed = df_vip_used.groupby(['客戶ID', 'CB代號'], dropna=False)['VIP報價張數'].sum().to_dict()
+
+        vip_quote_path = r"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\VIP_Quote.csv"
+        df_vip_quote = None
+        used_encoding = 'utf-8-sig'
+        for encoding in ['utf-8-sig', 'utf-8', 'big5', 'gbk', 'cp950']:
+            try:
+                df_vip_quote = pd.read_csv(vip_quote_path, encoding=encoding, dtype=str)
+                used_encoding = encoding
+                break
+            except (UnicodeDecodeError, FileNotFoundError):
+                continue
+        if df_vip_quote is None:
+            print(f"無法讀取 {vip_quote_path}，跳過 VIP_Quote 扣減")
+            return
+        if '張數' not in df_vip_quote.columns:
+            df_vip_quote['張數'] = ''
+        if '備註' not in df_vip_quote.columns:
+            df_vip_quote['備註'] = ''
+
+        df_vip_quote['客戶ID'] = df_vip_quote['客戶ID'].astype(str).str.strip()
+        df_vip_quote['CB代號'] = df_vip_quote['CB代號'].astype(str).str.strip()
+
+        rows_to_drop = []
+        for i, row in df_vip_quote.iterrows():
+            key = (row['客戶ID'], row['CB代號'])
+            if key not in consumed:
+                continue
+            qty_raw = row.get('張數', '')
+            if qty_raw is None or str(qty_raw).strip() == '' or (isinstance(qty_raw, float) and pd.isna(qty_raw)):
+                continue  # 空 = 無限制，不扣
+            try:
+                cur_qty = int(float(str(qty_raw).strip()))
+            except (ValueError, TypeError):
+                continue
+            if cur_qty <= 0:
+                continue
+            used = int(consumed[key])
+            actually_deducted = min(used, cur_qty)
+            new_qty = cur_qty - actually_deducted
+            note = f"於{today_str}扣除了{actually_deducted}張"
+            old_note = str(row.get('備註', '') or '').strip()
+            if old_note and old_note.lower() != 'nan':
+                df_vip_quote.at[i, '備註'] = f"{old_note}; {note}"
+            else:
+                df_vip_quote.at[i, '備註'] = note
+            if new_qty <= 0:
+                rows_to_drop.append(i)
+            else:
+                df_vip_quote.at[i, '張數'] = str(new_qty)
+
+        if rows_to_drop:
+            df_vip_quote = df_vip_quote.drop(index=rows_to_drop).reset_index(drop=True)
+
+        df_vip_quote.to_csv(vip_quote_path, index=False, encoding=used_encoding, header=True)
+        # 刷新UI
+        try:
+            self.loading_vips()
+        except Exception as refresh_err:
+            print(f"刷新VIP資料失敗：{refresh_err}")
+
+    def _deduct_penalty_after_upload(self, df_buy, today_str):
+        """產檔成功後依 罰金套用張數 扣減 Penalty_Settings.csv 的張數並追加備註。
+
+        - 對每筆 buy row 的 (客戶ID, CB代號)，先嘗試在 CSV 找特定客戶設定；找不到再找 ALL。
+        - 賠償金張數留空 → 視為無上限，不扣。
+        - 扣到 0 → 該列刪除。
+        """
+        if '罰金套用張數' not in df_buy.columns:
+            return
+        df_used = df_buy[['客戶ID', 'CB代號', '罰金套用張數']].copy()
+        df_used['罰金套用張數'] = pd.to_numeric(df_used['罰金套用張數'], errors='coerce').fillna(0).astype(int)
+        df_used = df_used[df_used['罰金套用張數'] > 0]
+        if df_used.empty:
+            return
+        df_used['客戶ID'] = df_used['客戶ID'].astype(str).str.strip()
+        df_used['CB代號'] = df_used['CB代號'].astype(str).str.strip()
+        consumed = df_used.groupby(['客戶ID', 'CB代號'], dropna=False)['罰金套用張數'].sum().to_dict()
+
+        penalty_path = r"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\Penalty_Settings.csv"
+        df_penalty = None
+        used_encoding = 'utf-8-sig'
+        for encoding in ['utf-8-sig', 'utf-8', 'big5', 'gbk', 'cp950']:
+            try:
+                df_penalty = pd.read_csv(penalty_path, encoding=encoding, dtype=str)
+                used_encoding = encoding
+                break
+            except (UnicodeDecodeError, FileNotFoundError):
+                continue
+        if df_penalty is None:
+            print(f"無法讀取 {penalty_path}，跳過 Penalty_Settings 扣減")
+            return
+
+        for col_name in ('賠償金張數', '備註'):
+            if col_name not in df_penalty.columns:
+                df_penalty[col_name] = ''
+        df_penalty['客戶ID'] = df_penalty['客戶ID'].astype(str).str.strip()
+        df_penalty['CB代號'] = df_penalty['CB代號'].astype(str).str.strip()
+
+        # 為每組 (買進客戶ID, CB代號) 解析對應的 Penalty_Settings 列：先看特定客戶，否則看 ALL
+        # 先把 Penalty_Settings 的 key 整理成 dict
+        penalty_idx = {}
+        for i, prow in df_penalty.iterrows():
+            penalty_idx[(prow['客戶ID'], prow['CB代號'])] = i
+
+        # 把消耗量重新分流到對應 csv 列上
+        deduction_by_csv_idx = {}
+        for (cus_id, cb_code), used_qty in consumed.items():
+            csv_idx = penalty_idx.get((cus_id, cb_code))
+            if csv_idx is None:
+                csv_idx = penalty_idx.get(('ALL', cb_code))
+            if csv_idx is None:
+                continue
+            deduction_by_csv_idx[csv_idx] = deduction_by_csv_idx.get(csv_idx, 0) + int(used_qty)
+
+        rows_to_drop = []
+        for csv_idx, used_qty in deduction_by_csv_idx.items():
+            qty_raw = df_penalty.at[csv_idx, '賠償金張數']
+            # 空 = 無上限，不扣
+            if qty_raw is None or str(qty_raw).strip() == '' or (isinstance(qty_raw, float) and pd.isna(qty_raw)):
+                continue
+            try:
+                cur_qty = int(float(str(qty_raw).strip()))
+            except (ValueError, TypeError):
+                continue
+            if cur_qty <= 0:
+                continue
+            actually_deducted = min(used_qty, cur_qty)
+            new_qty = cur_qty - actually_deducted
+            note = f"於{today_str}扣除了{actually_deducted}張"
+            old_note = str(df_penalty.at[csv_idx, '備註'] or '').strip()
+            if old_note and old_note.lower() != 'nan':
+                df_penalty.at[csv_idx, '備註'] = f"{old_note}; {note}"
+            else:
+                df_penalty.at[csv_idx, '備註'] = note
+            if new_qty <= 0:
+                rows_to_drop.append(csv_idx)
+            else:
+                df_penalty.at[csv_idx, '賠償金張數'] = str(new_qty)
+
+        if rows_to_drop:
+            df_penalty = df_penalty.drop(index=rows_to_drop).reset_index(drop=True)
+
+        df_penalty.to_csv(penalty_path, index=False, encoding=used_encoding, header=True)
+        try:
+            self.loading_penalty_settings()
+        except Exception as refresh_err:
+            print(f"刷新罰金設定失敗：{refresh_err}")
 
     def generate_sell_upload_file(self):
         """產生提解賣出上傳檔"""
@@ -1595,10 +2423,10 @@ class TableEditor(QWidget):
                         df_rec_buy['成交均價'] = pd.to_numeric(df_rec_buy['成交均價'], errors='coerce')
                         
                         # 創建 match 欄位：客戶ID+CB代號+成交張數+成交均價
-                        df_buy['match'] = (df_buy['客戶ID'] + '|' + df_buy['CB代號'] + '|' + 
-                                          df_buy['成交張數'] + '|' + df_buy['成交均價'].astype(str))
-                        df_rec_buy['match'] = (df_rec_buy['客戶ID'] + '|' + df_rec_buy['CB代號'] + '|' + 
-                                               df_rec_buy['買進張數'] + '|' + df_rec_buy['成交均價'].astype(str))
+                        df_buy['match'] = (df_buy['客戶ID'].astype(str) + '|' + df_buy['CB代號'].astype(str) + '|' +
+                                          df_buy['成交張數'].astype(str) + '|' + df_buy['成交均價'].astype(str))
+                        df_rec_buy['match'] = (df_rec_buy['客戶ID'].astype(str) + '|' + df_rec_buy['CB代號'].astype(str) + '|' +
+                                               df_rec_buy['買進張數'].astype(str) + '|' + df_rec_buy['成交均價'].astype(str))
                         
                         # 建立 match 到錄音時間的映射字典
                         match_to_time = dict(zip(df_rec_buy['match'], df_rec_buy['錄音時間'].astype(str).str.strip()))
@@ -1639,10 +2467,10 @@ class TableEditor(QWidget):
                         df_rec_sell['成交均價'] = pd.to_numeric(df_rec_sell['成交均價'], errors='coerce')
                         
                         # 創建 match 欄位：客戶ID+CB代號+履約張數+成交均價
-                        df_sell['match'] = (df_sell['客戶ID'] + '|' + df_sell['CB代號'] + '|' + 
-                                           df_sell['履約張數'] + '|' + df_sell['成交均價'].astype(str))
-                        df_rec_sell['match'] = (df_rec_sell['客戶ID'] + '|' + df_rec_sell['CB代號'] + '|' + 
-                                               df_rec_sell['賣出張數'] + '|' + df_rec_sell['成交均價'].astype(str))
+                        df_sell['match'] = (df_sell['客戶ID'].astype(str) + '|' + df_sell['CB代號'].astype(str) + '|' +
+                                           df_sell['履約張數'].astype(str) + '|' + df_sell['成交均價'].astype(str))
+                        df_rec_sell['match'] = (df_rec_sell['客戶ID'].astype(str) + '|' + df_rec_sell['CB代號'].astype(str) + '|' +
+                                               df_rec_sell['賣出張數'].astype(str) + '|' + df_rec_sell['成交均價'].astype(str))
                         
                         # 建立 match 到錄音時間的映射字典
                         match_to_time = dict(zip(df_rec_sell['match'], df_rec_sell['錄音時間'].astype(str).str.strip()))
@@ -1787,11 +2615,12 @@ class TableEditor(QWidget):
     def update_recording_table(self, df_recording):
         """更新錄音表格顯示"""
         try:
+            self.table_recording.setSortingEnabled(False)
             self.table_recording.setRowCount(len(df_recording))
-            
+
             # 獲取表格的列名
             recording_columns = [self.table_recording.horizontalHeaderItem(i).text() for i in range(self.table_recording.columnCount())]
-            
+
             for i, row in df_recording.iterrows():
                 for j, col_name in enumerate(recording_columns):
                     # 如果DataFrame中有這個列，使用DataFrame的值；否則使用空字串
@@ -1799,13 +2628,14 @@ class TableEditor(QWidget):
                         value = row[col_name] if pd.notna(row[col_name]) else ''
                     else:
                         value = ''
-                    
+
                     # 如果是錄音人員列且值為空，設置默認值為"蔡睿"
                     if col_name == '錄音人員' and (not value or value == ''):
                         value = '蔡睿'
-                    
+
                     item = QTableWidgetItem(str(value))
                     self.table_recording.setItem(i, j, item)
+            self.table_recording.setSortingEnabled(True)
         except Exception as e:
             print(f"更新錄音表格時發生錯誤：{e}")
             import traceback
@@ -2005,6 +2835,8 @@ class TableEditor(QWidget):
                         for i in range(table.columnCount())
                     ]
 
+                    was_sorting = table.isSortingEnabled()
+                    table.setSortingEnabled(False)
                     table.setRowCount(len(df))
                     df = df[table_columns].reset_index(drop=True)
                     print(df)
@@ -2020,11 +2852,25 @@ class TableEditor(QWidget):
                                     text = str(val)
                             else:
                                 text = str(val) if pd.notna(val) else ""
-                            
+
                             item = QTableWidgetItem(text)
                             # 可加背景色：item.setBackground(QColor(230, 255, 230))
                             table.setItem(i, j, item)
+                    table.setSortingEnabled(was_sorting)
 
+            # 讀取後套用與「報價確認」/「張數確認」相同的上色結果
+            try:
+                self.check_buy_table_with_quote(silent=True)
+            except Exception as e:
+                print(f"套用買進報價確認上色失敗: {e}")
+            try:
+                self.check_buy_table_with_qty(silent=True)
+            except Exception as e:
+                print(f"套用買進張數確認上色失敗: {e}")
+            try:
+                self.check_sell_table_with_qty(silent=True)
+            except Exception as e:
+                print(f"套用提解賣出張數確認上色失敗: {e}")
 
         except Exception as e:
             QMessageBox.critical(self, "讀取失敗", f"發生錯誤：{e}")
@@ -2137,11 +2983,12 @@ class TableEditor(QWidget):
 
         return sum_buy_amt, sum_buy_qty, sum_sell_amt, sum_sell_qty
 
-    def check_buy_table_with_quote(self):
-        
+    def check_buy_table_with_quote(self, silent: bool = False):
+
         df_buy = self.get_table_data(self.table_buy)
         if df_buy.empty:
-            QMessageBox.warning(self, "警告", "新作買進分頁沒有資料！")
+            if not silent:
+                QMessageBox.warning(self, "警告", "新作買進分頁沒有資料！")
             return
         
         df_buy['權利金百元價'] = pd.to_numeric(df_buy['權利金百元價'], errors='coerce')
@@ -2204,19 +3051,21 @@ class TableEditor(QWidget):
         ok = int(df_chk['是否符合'].fillna(False).sum())
         ng = total - ok
         
-        if ng == 0:
-            QMessageBox.information(self, "檢查結果", f"全部符合（{ok}/{total}）")
-        else:
-            # 只展示前 20 筆不符合做為提示
-            preview = '\n'.join(df_bad[['CB代號','說明']].head(20).apply(lambda r: f"{r['CB代號']}: {r['說明']}", axis=1))
-            QMessageBox.warning(self, "檢查結果", f"不符合 {ng}/{total} 筆：\n{preview}")
-        
+        if not silent:
+            if ng == 0:
+                QMessageBox.information(self, "檢查結果", f"全部符合（{ok}/{total}）")
+            else:
+                # 只展示前 20 筆不符合做為提示
+                preview = '\n'.join(df_bad[['CB代號','說明']].head(20).apply(lambda r: f"{r['CB代號']}: {r['說明']}", axis=1))
+                QMessageBox.warning(self, "檢查結果", f"不符合 {ng}/{total} 筆：\n{preview}")
+
         return
 
-    def check_sell_table_with_qty(self):
+    def check_sell_table_with_qty(self, silent: bool = False):
         df_sell = self.get_table_data(self.table_sell)
         if df_sell.empty:
-            QMessageBox.warning(self, "警告", "提解賣出分頁沒有資料！")
+            if not silent:
+                QMessageBox.warning(self, "警告", "提解賣出分頁沒有資料！")
             return
          
         # 數值轉換
@@ -2240,7 +3089,8 @@ class TableEditor(QWidget):
         total_amt = int(df_group['成交金額'].sum())
         lines.append(f"總計: {total_qty} 張, {total_amt:,} 元")
         
-        QMessageBox.information(self, "張數/總額確認", "\n".join(lines))
+        if not silent:
+            QMessageBox.information(self, "張數/總額確認", "\n".join(lines))
 
         #檢查有無重覆原單契約編號
         # 找出所有重複的原單契約編號（包括第一次出現的）
@@ -2277,45 +3127,125 @@ class TableEditor(QWidget):
                                     cell_item.setBackground(orange_color)
                                     self.table_sell.setItem(row, col, cell_item)
             
-            # 顯示重複的契約編號列表
-            duplicate_list = ', '.join(duplicate_contracts[:10])  # 最多顯示10個
-            if len(duplicate_contracts) > 10:
-                duplicate_list += f' ... (共{len(duplicate_contracts)}個)'
-            
-            QMessageBox.warning(
-                self, 
-                "發現重複編號", 
-                f"發現 {len(duplicate_contracts)} 個重複的原單契約編號：\n{duplicate_list}\n\n已將重複的行標記為橙色。"
-            )
+            if not silent:
+                # 顯示重複的契約編號列表
+                duplicate_list = ', '.join(duplicate_contracts[:10])  # 最多顯示10個
+                if len(duplicate_contracts) > 10:
+                    duplicate_list += f' ... (共{len(duplicate_contracts)}個)'
+
+                QMessageBox.warning(
+                    self,
+                    "發現重複編號",
+                    f"發現 {len(duplicate_contracts)} 個重複的原單契約編號：\n{duplicate_list}\n\n已將重複的行標記為橙色。"
+                )
         else:
             # 無重複
-            QMessageBox.information(self, "檢查完成", "✓ 無重複原單契約編號")
+            if not silent:
+                QMessageBox.information(self, "檢查完成", "✓ 無重複原單契約編號")
 
-        sum_buy_amt, sum_buy_qty, sum_sell_amt, sum_sell_qty = self.get_monitor_fill_sum_amt()
+        # 與 CB自營系統（RPT_Monitor_Fill）比對
+        try:
+            df_monitor_fill = get_631_Monitor_Fill()
+        except Exception as e:
+            if not silent:
+                QMessageBox.warning(self, "警告", f"無法取得CB自營系統資料：{e}")
+            return
+
+        df_cb = df_monitor_fill[~df_monitor_fill['客戶代碼'].isin(['23218183', ''])].copy()
+        sum_sell_amt = int(df_cb['賣出金額'].sum())
+        sum_sell_qty = int(df_cb['賣出股數'].sum() / 1000)
         sellmatch_amt = int(df_group[df_group['來自'] == '盤面交易']['成交金額'].sum())
         sellmatch_qty = int(df_group[df_group['來自'] == '盤面交易']['履約張數'].sum())
 
-        if sellmatch_amt != sum_sell_amt or sellmatch_qty != sum_sell_qty:
-            QMessageBox.warning(self, "警告", f"盤面交易金額或張數與CB自營系統不符\n盤面交易: {sellmatch_amt:,} 元, {sellmatch_qty} 張\nCB自營系統: {sum_sell_amt:,} 元, {sum_sell_qty} 張")
-        elif sellmatch_amt == sum_sell_amt and sellmatch_qty == sum_sell_qty:
-            QMessageBox.information(self, "確認", "盤面交易金額或張數與CB自營系統相符")
+        if sellmatch_amt == sum_sell_amt and sellmatch_qty == sum_sell_qty:
+            if not silent:
+                QMessageBox.information(self, "確認", "盤面交易金額或張數與CB自營系統相符")
+            return
 
-    def check_buy_table_with_qty(self):
+        # 不符：依 (客戶ID, CB代號) 找出差異
+        df_ap_panel = df_sell[df_sell['來自'] == '盤面交易'].copy()
+        df_ap_panel['客戶ID'] = df_ap_panel['客戶ID'].astype(str).str.strip()
+        df_ap_panel['CB代號'] = df_ap_panel['CB代號'].astype(str).str.strip()
+        df_ap_detail = df_ap_panel.groupby(['客戶ID', 'CB代號'], dropna=False).agg(
+            {'履約張數': 'sum', '成交金額': 'sum'}
+        ).reset_index()
+        df_ap_detail = df_ap_detail.rename(columns={'履約張數': 'AP張數', '成交金額': 'AP金額'})
+
+        df_cb['客戶代碼'] = df_cb['客戶代碼'].astype(str).str.strip()
+        df_cb['商品代碼'] = df_cb['商品代碼'].astype(str).str.strip()
+        df_cb_detail = df_cb.groupby(['客戶代碼', '商品代碼'], dropna=False).agg(
+            {'賣出金額': 'sum', '賣出股數': 'sum'}
+        ).reset_index()
+        df_cb_detail['CB張數'] = df_cb_detail['賣出股數'] / 1000
+        df_cb_detail = df_cb_detail.rename(columns={'客戶代碼': '客戶ID', '商品代碼': 'CB代號', '賣出金額': 'CB金額'})[
+            ['客戶ID', 'CB代號', 'CB張數', 'CB金額']
+        ]
+
+        df_diff = df_ap_detail.merge(df_cb_detail, on=['客戶ID', 'CB代號'], how='outer').fillna(0)
+        for c in ['AP張數', 'AP金額', 'CB張數', 'CB金額']:
+            df_diff[c] = pd.to_numeric(df_diff[c], errors='coerce').fillna(0).astype(int)
+        df_diff['張差'] = df_diff['AP張數'] - df_diff['CB張數']
+        df_diff['金差'] = df_diff['AP金額'] - df_diff['CB金額']
+        df_mismatch = df_diff[(df_diff['張差'] != 0) | (df_diff['金差'] != 0)].copy()
+
+        # 將不符合的盤面交易列上紅色（紅色優先，覆蓋重複編號的橙色）
+        mismatch_keys = set(zip(df_mismatch['客戶ID'].astype(str), df_mismatch['CB代號'].astype(str)))
+        red = QColor(255, 180, 180)
+        sell_columns = [self.table_sell.horizontalHeaderItem(i).text() for i in range(self.table_sell.columnCount())]
+        cus_col = sell_columns.index('客戶ID') if '客戶ID' in sell_columns else -1
+        cb_col = sell_columns.index('CB代號') if 'CB代號' in sell_columns else -1
+        src_col = sell_columns.index('來自') if '來自' in sell_columns else -1
+        if cus_col >= 0 and cb_col >= 0 and mismatch_keys:
+            for row in range(self.table_sell.rowCount()):
+                cus_item = self.table_sell.item(row, cus_col)
+                cb_item = self.table_sell.item(row, cb_col)
+                if not cus_item or not cb_item:
+                    continue
+                if src_col >= 0:
+                    src_item = self.table_sell.item(row, src_col)
+                    if not src_item or src_item.text().strip() != '盤面交易':
+                        continue
+                key = (cus_item.text().strip(), cb_item.text().strip())
+                if key in mismatch_keys:
+                    for col in range(self.table_sell.columnCount()):
+                        cell = self.table_sell.item(row, col)
+                        if cell is None:
+                            cell = QTableWidgetItem('')
+                            self.table_sell.setItem(row, col, cell)
+                        cell.setBackground(red)
+
+        if not silent:
+            header = (f"盤面交易金額或張數與CB自營系統不符\n"
+                      f"盤面交易: {sellmatch_amt:,} 元, {sellmatch_qty} 張\n"
+                      f"CB自營系統: {sum_sell_amt:,} 元, {sum_sell_qty} 張\n"
+                      f"\n不符明細（共 {len(df_mismatch)} 筆）：")
+            detail_lines = []
+            for _, r in df_mismatch.head(30).iterrows():
+                detail_lines.append(
+                    f"{r['客戶ID']} / {r['CB代號']}: 中台={r['AP張數']}張,{r['AP金額']:,}元  "
+                    f"CB自營={r['CB張數']}張,{r['CB金額']:,}元  (差 {r['張差']}張, {r['金差']:,}元)"
+                )
+            if len(df_mismatch) > 30:
+                detail_lines.append(f"...（僅顯示前 30 筆）")
+            QMessageBox.warning(self, "警告", header + "\n" + "\n".join(detail_lines))
+
+    def check_buy_table_with_qty(self, silent: bool = False):
         df_buy = self.get_table_data(self.table_buy)
         if df_buy.empty:
-            QMessageBox.warning(self, "警告", "新作買進分頁沒有資料！")
+            if not silent:
+                QMessageBox.warning(self, "警告", "新作買進分頁沒有資料！")
             return
-        
+
         # 數值轉換
         df_buy['成交張數'] = pd.to_numeric(df_buy['成交張數'], errors='coerce').fillna(0)
         df_buy['成交均價'] = pd.to_numeric(df_buy['成交均價'], errors='coerce').fillna(0)
         df_buy['成交金額'] = round(df_buy['成交張數'] * df_buy['成交均價'] * 1000, 0)
-        
+
         # 依來源彙總
         df_group = df_buy.groupby('來自', dropna=False).agg({'成交張數': 'sum', '成交金額': 'sum'}).reset_index()
         df_group['成交張數'] = df_group['成交張數'].astype(int)
         df_group['成交金額'] = df_group['成交金額'].astype(int)
-        
+
         # 組訊息
         lines = []
         for _, r in df_group.iterrows():
@@ -2327,16 +3257,94 @@ class TableEditor(QWidget):
         total_amt = int(df_group['成交金額'].sum())
         lines.append(f"總計: {total_qty} 張, {total_amt:,} 元")
 
-        QMessageBox.information(self, "張數/總額確認", "\n".join(lines))
+        if not silent:
+            QMessageBox.information(self, "張數/總額確認", "\n".join(lines))
 
-        sum_buy_amt, sum_buy_qty, sum_sell_amt, sum_sell_qty = self.get_monitor_fill_sum_amt()
+        # 與 CB自營系統（RPT_Monitor_Fill）比對
+        try:
+            df_monitor_fill = get_631_Monitor_Fill()
+        except Exception as e:
+            if not silent:
+                QMessageBox.warning(self, "警告", f"無法取得CB自營系統資料：{e}")
+            return
+
+        df_cb = df_monitor_fill[~df_monitor_fill['客戶代碼'].isin(['23218183', ''])].copy()
+        sum_buy_amt = int(df_cb['買進金額'].sum())
+        sum_buy_qty = int(df_cb['買進股數'].sum() / 1000)
         buymatch_amt = int(df_group[df_group['來自'] == '盤面交易']['成交金額'].sum())
         buymatch_qty = int(df_group[df_group['來自'] == '盤面交易']['成交張數'].sum())
 
-        if buymatch_amt != sum_buy_amt or buymatch_qty != sum_buy_qty:
-            QMessageBox.warning(self, "警告", f"盤面交易金額或張數與CB自營系統不符\n盤面交易: {buymatch_amt:,} 元, {buymatch_qty} 張\nCB自營系統: {sum_buy_amt:,} 元, {sum_buy_qty} 張")
-        elif buymatch_amt == sum_buy_amt and buymatch_qty == sum_buy_qty:
-            QMessageBox.information(self, "確認", "盤面交易金額或張數與CB自營系統相符")
+        if buymatch_amt == sum_buy_amt and buymatch_qty == sum_buy_qty:
+            if not silent:
+                QMessageBox.information(self, "確認", "盤面交易金額或張數與CB自營系統相符")
+            return
+
+        # 不符：依 (客戶ID, CB代號) 找出差異
+        df_ap_panel = df_buy[df_buy['來自'] == '盤面交易'].copy()
+        df_ap_panel['客戶ID'] = df_ap_panel['客戶ID'].astype(str).str.strip()
+        df_ap_panel['CB代號'] = df_ap_panel['CB代號'].astype(str).str.strip()
+        df_ap_detail = df_ap_panel.groupby(['客戶ID', 'CB代號'], dropna=False).agg(
+            {'成交張數': 'sum', '成交金額': 'sum'}
+        ).reset_index()
+        df_ap_detail = df_ap_detail.rename(columns={'成交張數': 'AP張數', '成交金額': 'AP金額'})
+
+        df_cb['客戶代碼'] = df_cb['客戶代碼'].astype(str).str.strip()
+        df_cb['商品代碼'] = df_cb['商品代碼'].astype(str).str.strip()
+        df_cb_detail = df_cb.groupby(['客戶代碼', '商品代碼'], dropna=False).agg(
+            {'買進金額': 'sum', '買進股數': 'sum'}
+        ).reset_index()
+        df_cb_detail['CB張數'] = df_cb_detail['買進股數'] / 1000
+        df_cb_detail = df_cb_detail.rename(columns={'客戶代碼': '客戶ID', '商品代碼': 'CB代號', '買進金額': 'CB金額'})[
+            ['客戶ID', 'CB代號', 'CB張數', 'CB金額']
+        ]
+
+        df_diff = df_ap_detail.merge(df_cb_detail, on=['客戶ID', 'CB代號'], how='outer').fillna(0)
+        for c in ['AP張數', 'AP金額', 'CB張數', 'CB金額']:
+            df_diff[c] = pd.to_numeric(df_diff[c], errors='coerce').fillna(0).astype(int)
+        df_diff['張差'] = df_diff['AP張數'] - df_diff['CB張數']
+        df_diff['金差'] = df_diff['AP金額'] - df_diff['CB金額']
+        df_mismatch = df_diff[(df_diff['張差'] != 0) | (df_diff['金差'] != 0)].copy()
+
+        # 將不符合的盤面交易列上紅色
+        mismatch_keys = set(zip(df_mismatch['客戶ID'].astype(str), df_mismatch['CB代號'].astype(str)))
+        red = QColor(255, 180, 180)
+        buy_columns = [self.table_buy.horizontalHeaderItem(i).text() for i in range(self.table_buy.columnCount())]
+        cus_col = buy_columns.index('客戶ID') if '客戶ID' in buy_columns else -1
+        cb_col = buy_columns.index('CB代號') if 'CB代號' in buy_columns else -1
+        src_col = buy_columns.index('來自') if '來自' in buy_columns else -1
+        if cus_col >= 0 and cb_col >= 0 and mismatch_keys:
+            for row in range(self.table_buy.rowCount()):
+                cus_item = self.table_buy.item(row, cus_col)
+                cb_item = self.table_buy.item(row, cb_col)
+                if not cus_item or not cb_item:
+                    continue
+                if src_col >= 0:
+                    src_item = self.table_buy.item(row, src_col)
+                    if not src_item or src_item.text().strip() != '盤面交易':
+                        continue
+                key = (cus_item.text().strip(), cb_item.text().strip())
+                if key in mismatch_keys:
+                    for col in range(self.table_buy.columnCount()):
+                        cell = self.table_buy.item(row, col)
+                        if cell is None:
+                            cell = QTableWidgetItem('')
+                            self.table_buy.setItem(row, col, cell)
+                        cell.setBackground(red)
+
+        if not silent:
+            header = (f"盤面交易金額或張數與CB自營系統不符\n"
+                      f"盤面交易: {buymatch_amt:,} 元, {buymatch_qty} 張\n"
+                      f"CB自營系統: {sum_buy_amt:,} 元, {sum_buy_qty} 張\n"
+                      f"\n不符明細（共 {len(df_mismatch)} 筆）：")
+            detail_lines = []
+            for _, r in df_mismatch.head(30).iterrows():
+                detail_lines.append(
+                    f"{r['客戶ID']} / {r['CB代號']}: 中台={r['AP張數']}張,{r['AP金額']:,}元  "
+                    f"CB自營={r['CB張數']}張,{r['CB金額']:,}元  (差 {r['張差']}張, {r['金差']:,}元)"
+                )
+            if len(df_mismatch) > 30:
+                detail_lines.append(f"...（僅顯示前 30 筆）")
+            QMessageBox.warning(self, "警告", header + "\n" + "\n".join(detail_lines))
 
     def check_buy_declare(self):
         """檢查新作買進申報"""
@@ -2448,8 +3456,9 @@ class TableEditor(QWidget):
             if col not in df_asw_buy.columns:
                 df_asw_buy[col] = ''
         df_asw_buy = df_asw_buy[buy_columns]
-        df_asw_buy = df_asw_buy.applymap(lambda x: strip_trailing_zeros(x) if pd.notna(x) else '').astype(str)
+        df_asw_buy = df_asw_buy.map(lambda x: strip_trailing_zeros(x) if pd.notna(x) else '').astype(str)
         # 將 df_asw_buy 逐行加入到 buy_table 裡面
+        self.table_buy.setSortingEnabled(False)
         for idx, row in df_asw_buy.iterrows():
             rowPosition = self.table_buy.rowCount()
             self.table_buy.insertRow(rowPosition)
@@ -2457,6 +3466,7 @@ class TableEditor(QWidget):
                 item_value = '' if pd.isna(row[col_name]) else str(row[col_name])
                 item = QTableWidgetItem(item_value)
                 self.table_buy.setItem(rowPosition, col_idx, item)
+        self.table_buy.setSortingEnabled(True)
 
 #====================載入時啟動====================
 
@@ -2508,7 +3518,13 @@ class TableEditor(QWidget):
 
             # 設定固定欄位
             df_buy_calculated['提前履約界限日'] = edate(tday, 3).strftime('%Y%m%d')
-            df_buy_calculated['提前履約賠償金'] = '0'
+            # 提前履約賠償金：若 apply_penalty_settings 已寫入則保留，否則預設 0
+            if '提前履約賠償金' in df_buy_calculated.columns:
+                existing = df_buy_calculated['提前履約賠償金'].astype(str).str.strip()
+                is_blank = existing.isin(['', 'nan', 'None']) | df_buy_calculated['提前履約賠償金'].isna()
+                df_buy_calculated.loc[is_blank, '提前履約賠償金'] = '0'
+            else:
+                df_buy_calculated['提前履約賠償金'] = '0'
             if '波動度' in df_buy_calculated.columns:
                 df_buy_calculated['標的波動率'] = df_buy_calculated['波動度']
             else:
@@ -2519,7 +3535,20 @@ class TableEditor(QWidget):
             df_buy_calculated['選擇權型態'] = 'C'
             df_buy_calculated['選擇權買賣別'] = 'S'
             df_buy_calculated['報價方式'] = '1'
-            df_buy_calculated['短契約'] = 'N'
+
+            # 短契約：依特殊報價的 _短約 旗標逐筆設定，並為短約=Y 的列覆寫選擇權到期日
+            if '_短約' in df_buy_calculated.columns:
+                df_buy_calculated['短契約'] = df_buy_calculated['_短約'].apply(
+                    lambda v: 'Y' if str(v).strip().upper() == 'Y' else 'N'
+                )
+            else:
+                df_buy_calculated['短契約'] = 'N'
+
+            is_short = df_buy_calculated['短契約'].astype(str).str.upper() == 'Y'
+            if is_short.any():
+                target = tday + pd.Timedelta(days=90)
+                target_business = next_business_day(target - pd.Timedelta(days=1), 1)
+                df_buy_calculated.loc[is_short, '選擇權到期日'] = target_business.strftime('%Y%m%d')
             df_buy_calculated['手續費(營業員)'] = '0'
             df_buy_calculated['手續費(業務單位)'] = df_buy_calculated['最終手續費'].astype(int)
             df_buy_calculated['交易員'] = '10112'
@@ -2532,10 +3561,10 @@ class TableEditor(QWidget):
 
             # 定義所需欄位順序
             required_columns_order = [
-                '新作契約編號', '上傳序號', '交易類型', '客戶ID', '客戶名稱', 'CB名稱', 'CB代號', '成交張數', '履約利率%', '成交均價', 
-                '權利金百元價', '手續費(業務單位)', '成交金額', '單位權利金', '權利金總額', '錄音日期', '錄音時間', '交易日', '生效日', '交割日期', 
-                '選擇權到期日', '賣回日', '賣回價', '提前履約界限日', '提前履約賠償金', '標的波動率', '無風險利率', '資金成本', '轉債面額', 
-                '選擇權型態', '選擇權買賣別', '報價方式', '短契約', '手續費(營業員)', '交易員', '營業員', '錄音人員', '子帳號', '固定端契約編號', '長約附加條款', '價格事件', '來自'
+                '新作契約編號', '上傳序號', '交易類型', '客戶ID', '客戶名稱', 'CB名稱', 'CB代號', '成交張數', '履約利率%', '成交均價',
+                '權利金百元價', '手續費(業務單位)', '成交金額', '單位權利金', '權利金總額', '錄音日期', '錄音時間', '交易日', '生效日', '交割日期',
+                '選擇權到期日', '賣回日', '賣回價', '提前履約界限日', '提前履約賠償金', '標的波動率', '無風險利率', '資金成本', '轉債面額',
+                '選擇權型態', '選擇權買賣別', '報價方式', '短契約', '手續費(營業員)', '交易員', '營業員', '錄音人員', '子帳號', '固定端契約編號', '長約附加條款', '價格事件', '來自', 'VIP報價張數', '罰金套用張數'
             ]
             
             missing_final_columns = [col for col in required_columns_order if col not in df_buy_calculated.columns]
@@ -2548,7 +3577,7 @@ class TableEditor(QWidget):
             df_buy_final = df_buy_calculated[required_columns_order]
             
             # 轉換為字串格式
-            df_buy_final = df_buy_final.applymap(lambda x: strip_trailing_zeros(x) if pd.notna(x) else '').astype(str)
+            df_buy_final = df_buy_final.map(lambda x: strip_trailing_zeros(x) if pd.notna(x) else '').astype(str)
             
             # 取得現有表格資料並合併
             df_exist = self.get_table_data(self.table_buy)
@@ -2567,6 +3596,7 @@ class TableEditor(QWidget):
 
 
 
+            self.table_buy.setSortingEnabled(False)
             self.table_buy.setRowCount(len(df_buy_final))
             blue_columns = ['交易類型', '權利金百元價', '履約利率%', '手續費(業務單位)', '成交張數', '成交均價']
             for i, row in df_buy_final.iterrows():
@@ -2575,6 +3605,7 @@ class TableEditor(QWidget):
                     if col in blue_columns:
                         item.setBackground(QColor(204, 229, 255))  # 淺藍色
                     self.table_buy.setItem(i, j, item)
+            self.table_buy.setSortingEnabled(True)
             
         except Exception as e:
             print(f"顯示買進表格時發生錯誤: {e}")
@@ -2616,8 +3647,9 @@ class TableEditor(QWidget):
             
             # 更新表格顯示
             buy_columns = [self.table_buy.horizontalHeaderItem(i).text() for i in range(self.table_buy.columnCount())]
+            self.table_buy.setSortingEnabled(False)
             self.table_buy.setRowCount(len(df_buy))
-            
+
             blue_columns = ['交易類型', '權利金百元價', '履約利率%', '手續費(業務單位)', '成交張數', '成交均價']
             for i, row in df_buy.iterrows():
                 for j, col in enumerate(df_buy.columns):
@@ -2627,6 +3659,7 @@ class TableEditor(QWidget):
                         if col in blue_columns:
                             item.setBackground(QColor(204, 229, 255))  # 淺藍色
                         self.table_buy.setItem(i, col_idx, item)
+            self.table_buy.setSortingEnabled(True)
             
             QMessageBox.information(self, "成功", f"已重新編號 {len(df_buy)} 筆買進資料！")
             
@@ -2668,14 +3701,16 @@ class TableEditor(QWidget):
             
             # 更新表格顯示
             sell_columns = [self.table_sell.horizontalHeaderItem(i).text() for i in range(self.table_sell.columnCount())]
+            self.table_sell.setSortingEnabled(False)
             self.table_sell.setRowCount(len(df_sell))
-            
+
             for i, row in df_sell.iterrows():
                 for j, col in enumerate(df_sell.columns):
                     if col in sell_columns:
                         col_idx = sell_columns.index(col)
                         item = QTableWidgetItem(str(row[col]))
                         self.table_sell.setItem(i, col_idx, item)
+            self.table_sell.setSortingEnabled(True)
             
             QMessageBox.information(self, "成功", f"已重新編號 {len(df_sell)} 筆賣出資料！")
             
@@ -2794,7 +3829,7 @@ class TableEditor(QWidget):
             new_seqnos_sell = [f"ASCP{yy}{mm}{last_number + i + 1:04d}" for i in range(len(df_sell))]
             #df_sell.insert(0, '解約契約編號', new_seqnos_sell)
             df_sell['解約契約編號'] = new_seqnos_sell
-            df_sell_final = df_sell.applymap(lambda x: strip_trailing_zeros(x)).astype(str)
+            df_sell_final = df_sell.map(lambda x: strip_trailing_zeros(x)).astype(str)
             # 檢查成交均價是否都大於履約價
             try:
                 price_check = pd.to_numeric(df_sell_final['成交均價'], errors='coerce') > pd.to_numeric(df_sell_final['履約價'], errors='coerce')
@@ -2807,6 +3842,7 @@ class TableEditor(QWidget):
             except Exception as e:
                 print(f"價格檢查時發生錯誤: {e}")
 
+            self.table_sell.setSortingEnabled(False)
             self.table_sell.setRowCount(len(df_sell_final))
             blue_columns = ['原單契約編號', '履約張數', '成交均價', '履約利率']
             for i, row in df_sell_final.iterrows():
@@ -2815,6 +3851,7 @@ class TableEditor(QWidget):
                     if col in blue_columns:
                         item.setBackground(QColor(204, 229, 255))  # 淺藍色
                     self.table_sell.setItem(i, j, item)
+            self.table_sell.setSortingEnabled(True)
             conn.close()
         except Exception as e:
             print(f"顯示賣出表格時發生錯誤: {e}")
@@ -2823,6 +3860,15 @@ class TableEditor(QWidget):
             return pd.DataFrame()
 
 #====================刷新資料====================
+
+    def get_default_fee(self) -> int:
+        if self.fee_custom_radio.isChecked():
+            text = self.fee_custom_edit.text().strip()
+            if text.isdigit():
+                value = int(text)
+                if 0 <= value <= 250:
+                    return value
+        return 150
 
     def refresh_data(self):
         try:
@@ -2833,7 +3879,8 @@ class TableEditor(QWidget):
             tday = datetime.now()
             df_buy = read_today_trade_buy(tday, settle_date)
             df_sell = read_today_trade_sell(tday, settle_date)
-            df_buy = calculate_new_trade_batch(df_buy, settle_date)
+            df_buy = calculate_new_trade_batch(df_buy, settle_date, default_fee=self.get_default_fee())
+            df_buy = self.apply_penalty_settings(df_buy)
             self.show_buy_table(df_buy)
             self.show_sell_table(df_sell)
             QMessageBox.information(self, "刷新成功", "資料已重新載入！")
@@ -2993,8 +4040,9 @@ class TableEditor(QWidget):
                 bargain_data_buy['成交均價'] = pd.to_numeric(bargain_data_buy['議價價格'], errors='coerce').fillna(0)
                 bargain_data_buy['成交金額'] = bargain_data_buy['議價金額'].str.replace(',', '', regex=False)
                 bargain_data_buy['交易類型'] = 'ASO'
-                convert_to_aso = calculate_new_trade_batch(bargain_data_buy, settle_date)
+                convert_to_aso = calculate_new_trade_batch(bargain_data_buy, settle_date, default_fee=self.get_default_fee())
                 convert_to_aso['來自'] = '議價交易'
+                convert_to_aso = self.apply_penalty_settings(convert_to_aso)
                 self.show_buy_table(convert_to_aso)
             
             bargain_data_sell = bargain_data[bargain_data['買/賣'] == '賣']

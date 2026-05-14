@@ -68,41 +68,55 @@ def read_vip_list(file_path: str = None) -> pd.DataFrame:
     """讀取VIP名單CSV檔案"""
     if file_path is None:
         file_path = r"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\VIP_List.csv"
-    
+
     try:
         # 嘗試多種編碼讀取
         for encoding in ['utf-8-sig', 'utf-8', 'big5', 'gbk', 'cp950']:
             try:
                 df_vip_list = pd.read_csv(file_path, encoding=encoding)
+                if '80元手續費' not in df_vip_list.columns:
+                    df_vip_list['80元手續費'] = ''
                 return df_vip_list
             except (UnicodeDecodeError, FileNotFoundError):
                 continue
-        
+
         print(f"無法讀取 {file_path}，將創建空的 VIP 名單")
-        return pd.DataFrame(columns=['客戶ID', '客戶名稱', '不限張數低手續費', '不限張數低利率'])
+        return pd.DataFrame(columns=['客戶ID', '客戶名稱', '不限張數低手續費', '不限張數低利率', '80元手續費'])
     except Exception as e:
         print(f"讀取VIP名單時發生錯誤: {e}")
-        return pd.DataFrame(columns=['客戶ID', '客戶名稱', '不限張數低手續費', '不限張數低利率'])
+        return pd.DataFrame(columns=['客戶ID', '客戶名稱', '不限張數低手續費', '不限張數低利率', '80元手續費'])
+
+VIP_QUOTE_COLUMNS = ['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '利率%', '手續費', '張數', '短約', '備註']
 
 def read_vip_quote(file_path: str = None) -> pd.DataFrame:
     """讀取VIP特殊報價CSV檔案"""
     if file_path is None:
         file_path = r"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\VIP_Quote.csv"
-    
+
+    def _ensure_columns(df):
+        if '張數' not in df.columns:
+            df['張數'] = ''
+        if '短約' not in df.columns:
+            df['短約'] = 'N'
+        else:
+            df['短約'] = df['短約'].fillna('N').astype(str).replace({'': 'N', 'nan': 'N'})
+        if '備註' not in df.columns:
+            df['備註'] = ''
+        return df[VIP_QUOTE_COLUMNS]
+
     try:
-        # 嘗試多種編碼讀取
         for encoding in ['utf-8-sig', 'utf-8', 'big5', 'gbk', 'cp950']:
             try:
-                df_vip_quote = pd.read_csv(file_path, encoding=encoding)
-                return df_vip_quote
+                df_vip_quote = pd.read_csv(file_path, encoding=encoding, dtype=str)
+                return _ensure_columns(df_vip_quote)
             except (UnicodeDecodeError, FileNotFoundError):
                 continue
-        
+
         print(f"無法讀取 {file_path}，將創建空的 VIP 報價")
-        return pd.DataFrame(columns=['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '利率%', '手續費'])
+        return pd.DataFrame(columns=VIP_QUOTE_COLUMNS)
     except Exception as e:
         print(f"讀取VIP報價時發生錯誤: {e}")
-        return pd.DataFrame(columns=['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '利率%', '手續費'])
+        return pd.DataFrame(columns=VIP_QUOTE_COLUMNS)
 
 def read_today_trade_buy(tday, settle_date, csv_path: str = None) -> pd.DataFrame:
         tdaystr = tday.strftime('%Y%m%d')
@@ -155,7 +169,7 @@ def read_customer_list(file_path: str = None) -> pd.DataFrame:
     """讀取客戶清單CSV檔案"""
     if file_path is None:
         file_path = r"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\Customer_List.csv"
-    
+
     try:
         for encoding in ['utf-8-sig', 'utf-8', 'big5', 'gbk', 'cp950']:
             try:
@@ -163,12 +177,36 @@ def read_customer_list(file_path: str = None) -> pd.DataFrame:
                 return df_customer
             except (UnicodeDecodeError, FileNotFoundError):
                 continue
-        
+
         print(f"無法讀取 {file_path}，將創建空的客戶清單")
         return pd.DataFrame(columns=['客戶ID', '客戶名稱'])
     except Exception as e:
         print(f"讀取客戶清單時發生錯誤: {e}")
         return pd.DataFrame(columns=['客戶ID', '客戶名稱'])
+
+PENALTY_SETTINGS_COLUMNS = ['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '賠償金張數', '提前履約賠償金', '備註']
+
+def read_penalty_settings(file_path: str = None) -> pd.DataFrame:
+    """讀取罰金設定CSV檔案"""
+    if file_path is None:
+        file_path = r"\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\Penalty_Settings.csv"
+
+    try:
+        for encoding in ['utf-8-sig', 'utf-8', 'big5', 'gbk', 'cp950']:
+            try:
+                df_penalty = pd.read_csv(file_path, encoding=encoding, dtype=str)
+                for col in PENALTY_SETTINGS_COLUMNS:
+                    if col not in df_penalty.columns:
+                        df_penalty[col] = ''
+                return df_penalty[PENALTY_SETTINGS_COLUMNS]
+            except (UnicodeDecodeError, FileNotFoundError):
+                continue
+
+        print(f"無法讀取 {file_path}，將創建空的罰金設定")
+        return pd.DataFrame(columns=PENALTY_SETTINGS_COLUMNS)
+    except Exception as e:
+        print(f"讀取罰金設定時發生錯誤: {e}")
+        return pd.DataFrame(columns=PENALTY_SETTINGS_COLUMNS)
 
 def load_vip_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     """讀取VIP資料並返回兩個DataFrame"""
@@ -188,20 +226,32 @@ def load_vip_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     df_vip_quote = None
     for encoding in ['utf-8-sig', 'utf-8', 'big5', 'gbk', 'cp950']:
         try:
-            df_vip_quote = pd.read_csv(vip_quote_path, encoding=encoding)
+            df_vip_quote = pd.read_csv(vip_quote_path, encoding=encoding, dtype=str)
             break
         except (UnicodeDecodeError, FileNotFoundError):
             continue
-    
+
     # 如果檔案不存在，創建空的 DataFrame
     if df_vip_list is None:
         print(f"無法讀取 {vip_list_path}，將創建空的 VIP 名單")
-        df_vip_list = pd.DataFrame(columns=['客戶ID', '客戶名稱', '不限張數低手續費', '不限張數低利率'])
-        
+        df_vip_list = pd.DataFrame(columns=['客戶ID', '客戶名稱', '不限張數低手續費', '不限張數低利率', '80元手續費'])
+    elif '80元手續費' not in df_vip_list.columns:
+        df_vip_list['80元手續費'] = ''
+
     if df_vip_quote is None:
         print(f"無法讀取 {vip_quote_path}，將創建空的 VIP 報價")
-        df_vip_quote = pd.DataFrame(columns=['客戶ID', '客戶名稱', 'CB代號', 'CB名稱', '利率%', '手續費'])
-    
+        df_vip_quote = pd.DataFrame(columns=VIP_QUOTE_COLUMNS)
+    else:
+        if '張數' not in df_vip_quote.columns:
+            df_vip_quote['張數'] = ''
+        if '短約' not in df_vip_quote.columns:
+            df_vip_quote['短約'] = 'N'
+        else:
+            df_vip_quote['短約'] = df_vip_quote['短約'].fillna('N').astype(str).replace({'': 'N', 'nan': 'N'})
+        if '備註' not in df_vip_quote.columns:
+            df_vip_quote['備註'] = ''
+        df_vip_quote = df_vip_quote[VIP_QUOTE_COLUMNS]
+
     return df_vip_list, df_vip_quote
 
 def get_daily_bond_rate() -> str:
@@ -320,7 +370,7 @@ def load_quote(): #讀取報價表
 def save_trading_statement(df_bargaining):
     df_bargaining = df_bargaining[['成交日期', '交割日期', 'T+?交割', '錄音時間', '單據編號', '買/賣', '客戶ID', '客戶名稱', 'CB名稱', 'CB代號', '議價張數', '議價價格', '議價金額', '參考價', '備註']]
     df_bargaining['T+?交割'] = df_bargaining['T+?交割'].astype(str)
-    df_bargaining['備註二'] = df_bargaining['客戶名稱'] + 'T+' + df_bargaining['T+?交割']
+    df_bargaining['備註二'] = df_bargaining['客戶名稱'].astype(str) + 'T+' + df_bargaining['T+?交割'].astype(str)
     df = pd.read_excel(r'\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\議價明細.xlsx')
     df = pd.concat([df, df_bargaining])
     df.to_excel(r'\\10.72.228.112\cbas業務公用區\CBAS_Trading_Maker\議價明細.xlsx', index=False)

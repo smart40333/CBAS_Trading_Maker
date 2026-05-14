@@ -25,6 +25,7 @@ def process_bargain_records(bargain_df: pd.DataFrame, df_quote: pd.DataFrame) ->
         db_cusid_length = 12
         cusids = bargain_df['客戶ID'].astype(str).unique().tolist() if '客戶ID' in bargain_df.columns else []
         cusids_padded = [cusid.ljust(db_cusid_length) for cusid in cusids]
+        print(cusids_padded)
         df_cus_info = get_customer_info(cusids_padded)
 
         # 合併
@@ -59,7 +60,7 @@ def process_bargain_records(bargain_df: pd.DataFrame, df_quote: pd.DataFrame) ->
         df_bargain_con['議價價格'] = pd.to_numeric(df_bargain_con.get('議價價格'), errors='coerce').astype(float)
         df_bargain_con['議價金額'] = (df_bargain_con['議價張數'] * df_bargain_con['議價價格'] * 1000).round().astype('Int64')
         df_bargain_con['議價金額'] = df_bargain_con['議價金額'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else '')
-        df_bargain_con['備註'] = '議價交易日期' + df_bargain_con['成交日期'].astype(str) + ' ' + df_bargain_con['錄音時間'].astype(str) + '議價' + df_bargain_con['買/賣'] + df_bargain_con['CB代號'].astype(str) + df_bargain_con['CB名稱'] + df_bargain_con['議價張數'].astype(str) + '張，按' + df_bargain_con['參考價'] + df_bargain_con['議價價格'].astype(str) + '進行，與市場價格未有差異'
+        df_bargain_con['備註'] = '議價交易日期' + df_bargain_con['成交日期'].astype(str) + ' ' + df_bargain_con['錄音時間'].astype(str) + '議價' + df_bargain_con['買/賣'].astype(str) + df_bargain_con['CB代號'].astype(str) + df_bargain_con['CB名稱'].astype(str) + df_bargain_con['議價張數'].astype(str) + '張，按' + df_bargain_con['參考價'].astype(str) + df_bargain_con['議價價格'].astype(str) + '進行，與市場價格未有差異'
 
         # 欄位順序
         final_columns = [
@@ -229,8 +230,11 @@ def generate_bargain_upload_file(df_bargain):
     df_fill.to_excel(filepath, index=False)
     return df_fill
     
-def calculate_new_trade_batch(trade_data: pd.DataFrame, settle_date) -> pd.DataFrame:
-    """統一的新作買進批次計算 - 使用獨立模組讀取資料"""
+def calculate_new_trade_batch(trade_data: pd.DataFrame, settle_date, default_fee: int = 150) -> pd.DataFrame:
+    """統一的新作買進批次計算 - 使用獨立模組讀取資料
+
+    default_fee: 基礎規則中 fallback 使用的手續費（取代原本硬編碼的 150）
+    """
     try:
         # 讀取所需資料
         df_vip_quote_all = read_vip_quote()
@@ -279,25 +283,116 @@ def calculate_new_trade_batch(trade_data: pd.DataFrame, settle_date) -> pd.DataF
         special_ids = ['H122699830', 'H123326603', 'P220839691']
         df_trade['最終利率'] = np.nan
         df_trade['最終手續費'] = np.nan
-        
-    # 1. 檢查特殊報價
+        df_trade['VIP報價張數'] = 0
+        df_trade['_短約'] = 'N'
+
+    # 1. 檢查特殊報價（支援多筆同 key、張數上限與拆單；短約=Y 優先）
         if not df_vip_quote_all.empty and all(col in df_vip_quote_all.columns for col in ['客戶ID', 'CB代號', '利率%', '手續費']):
-            vip_quote_key = df_vip_quote_all['客戶ID'].astype(str) + '_' + df_vip_quote_all['CB代號'].astype(str)
-            vip_quote_dict = df_vip_quote_all.set_index(vip_quote_key)[['利率%', '手續費']].to_dict('index')
-            
+            has_qty_col = '張數' in df_vip_quote_all.columns
+            has_short_col = '短約' in df_vip_quote_all.columns
+
+            # 將同 (客戶ID, CB代號) 的多筆設定分組，並依「短約=Y 優先」排序
+            vip_quotes_by_key = {}
+            for _, vip_row in df_vip_quote_all.iterrows():
+                cus_id_v = str(vip_row.get('客戶ID', '')).strip()
+                cb_code_v = str(vip_row.get('CB代號', '')).strip()
+                if not cus_id_v or not cb_code_v:
+                    continue
+                qty_raw = vip_row.get('張數') if has_qty_col else None
+                try:
+                    if qty_raw is None or str(qty_raw).strip() == '' or (isinstance(qty_raw, float) and pd.isna(qty_raw)):
+                        qty_limit = None
+                    else:
+                        qty_limit = int(float(qty_raw))
+                except (ValueError, TypeError):
+                    qty_limit = None
+                short_flag = 'N'
+                if has_short_col:
+                    short_raw = str(vip_row.get('短約', 'N')).strip().upper()
+                    short_flag = 'Y' if short_raw == 'Y' else 'N'
+                entry = {
+                    '短約': short_flag,
+                    '利率%': vip_row.get('利率%'),
+                    '手續費': vip_row.get('手續費'),
+                    '張數': qty_limit,
+                }
+                vip_quotes_by_key.setdefault((cus_id_v, cb_code_v), []).append(entry)
+            # 短約=Y 優先排在前面
+            for k in vip_quotes_by_key:
+                vip_quotes_by_key[k].sort(key=lambda e: 0 if e['短約'] == 'Y' else 1)
+
+            new_rows = []
+            rows_to_drop = []
             for idx, row in df_trade.iterrows():
-                trade_key = str(row['客戶ID']) + '_' + str(row['CB代號'])
-                if trade_key in vip_quote_dict:
-                    vip_info = vip_quote_dict[trade_key]
-                    if pd.notna(vip_info.get('利率%')):
-                        df_trade.loc[idx, '最終利率'] = vip_info['利率%']
-                    if pd.notna(vip_info.get('手續費')):
-                        df_trade.loc[idx, '最終手續費'] = vip_info['手續費']
-        
+                key = (str(row.get('客戶ID', '')).strip(), str(row.get('CB代號', '')).strip())
+                if key not in vip_quotes_by_key:
+                    continue
+                trade_qty = int(row['成交張數']) if pd.notna(row['成交張數']) else 0
+                if trade_qty <= 0:
+                    continue
+
+                avg_price = pd.to_numeric(row.get('成交均價'), errors='coerce')
+                remaining = trade_qty
+                matched_segments = []
+                for entry in vip_quotes_by_key[key]:
+                    if remaining <= 0:
+                        break
+                    qty_limit = entry['張數']
+                    take = remaining if qty_limit is None else min(remaining, qty_limit)
+                    if take <= 0:
+                        continue
+                    matched_segments.append((take, entry))
+                    remaining -= take
+
+                if not matched_segments:
+                    continue
+
+                # 產生 VIP 套用的新 row
+                for take, entry in matched_segments:
+                    nr = row.copy()
+                    nr['成交張數'] = take
+                    if pd.notna(avg_price):
+                        nr['成交金額'] = round(take * avg_price * 1000, 0)
+                    if pd.notna(entry['利率%']):
+                        nr['最終利率'] = float(entry['利率%'])
+                    if pd.notna(entry['手續費']):
+                        nr['最終手續費'] = float(entry['手續費'])
+                    nr['VIP報價張數'] = take
+                    nr['_短約'] = entry['短約']
+                    new_rows.append(nr)
+
+                # 剩餘張數（特殊報價無法吸收完）→ 進入一般規則
+                if remaining > 0:
+                    rest = row.copy()
+                    rest['成交張數'] = remaining
+                    if pd.notna(avg_price):
+                        rest['成交金額'] = round(remaining * avg_price * 1000, 0)
+                    rest['VIP報價張數'] = 0
+                    rest['_短約'] = 'N'
+                    rest['最終利率'] = np.nan
+                    rest['最終手續費'] = np.nan
+                    new_rows.append(rest)
+
+                rows_to_drop.append(idx)
+
+            if rows_to_drop:
+                df_trade = df_trade.drop(rows_to_drop)
+            if new_rows:
+                df_trade = pd.concat([df_trade, pd.DataFrame(new_rows)], ignore_index=True)
+
+        # 確保 _短約 欄位完整
+        if '_短約' not in df_trade.columns:
+            df_trade['_短約'] = 'N'
+        df_trade['_短約'] = df_trade['_短約'].fillna('N').astype(str).replace({'': 'N', 'nan': 'N'})
+
+
     # 2. 檢查VIP名單
         if not df_vip_list.empty and all(col in df_vip_list.columns for col in ['客戶ID', '不限張數低手續費', '不限張數低利率']):
-            vip_list_dict = df_vip_list.set_index('客戶ID')[['不限張數低手續費', '不限張數低利率']].to_dict('index')
-            
+            vip_list_cols = ['不限張數低手續費', '不限張數低利率']
+            if '80元手續費' in df_vip_list.columns:
+                vip_list_cols.append('80元手續費')
+            vip_list_dict = df_vip_list.set_index('客戶ID')[vip_list_cols].to_dict('index')
+
             for idx, row in df_trade.iterrows():
                 cus_id = str(row['客戶ID'])
                 if pd.isna(df_trade.loc[idx, '最終利率']) or pd.isna(df_trade.loc[idx, '最終手續費']):
@@ -305,8 +400,11 @@ def calculate_new_trade_batch(trade_data: pd.DataFrame, settle_date) -> pd.DataF
                         vip_info = vip_list_dict[cus_id]
                         if pd.isna(df_trade.loc[idx, '最終利率']) and vip_info.get('不限張數低利率') == 'Y':
                             df_trade.loc[idx, '最終利率'] = row['低履約利率']
-                        if pd.isna(df_trade.loc[idx, '最終手續費']) and vip_info.get('不限張數低手續費') == 'Y':
-                            df_trade.loc[idx, '最終手續費'] = 100
+                        if pd.isna(df_trade.loc[idx, '最終手續費']):
+                            if vip_info.get('80元手續費') == 'Y':
+                                df_trade.loc[idx, '最終手續費'] = 80
+                            elif vip_info.get('不限張數低手續費') == 'Y':
+                                df_trade.loc[idx, '最終手續費'] = 100
         
     # 3. 檢查特殊ID
         for idx, row in df_trade.iterrows():
@@ -328,7 +426,7 @@ def calculate_new_trade_batch(trade_data: pd.DataFrame, settle_date) -> pd.DataF
                 elif row.get('SRC', '') == 'E':
                     df_trade.loc[idx, '最終手續費'] = 110
                 else:
-                    df_trade.loc[idx, '最終手續費'] = 150
+                    df_trade.loc[idx, '最終手續費'] = default_fee
         
     # 最終處理
         df_trade['最終手續費'] = pd.to_numeric(df_trade['最終手續費'], errors='coerce').astype(int)
